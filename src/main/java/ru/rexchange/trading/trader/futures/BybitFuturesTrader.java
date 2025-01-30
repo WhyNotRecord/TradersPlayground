@@ -171,7 +171,7 @@ public class BybitFuturesTrader extends CommonFuturesTrader {
   @Override
   public boolean supportsHedgeMode() {
     try {
-      return PositionMode.BOTH_SIDES.equals(getSignedClient().getPositionMode());
+      return PositionMode.BOTH_SIDES.equals(getSignedClient().getPositionMode(getSymbol()));
     } catch (Exception e) {
       LOGGER.warn("Error occurred trying to find out position mode for trader " + this, e);
       return false;
@@ -208,7 +208,7 @@ public class BybitFuturesTrader extends CommonFuturesTrader {
     if (!this.getAuthenticator().equals(authenticator)) {
       try {
         BybitSignedClient apiClient = getSignedClient();
-        if (!PositionMode.BOTH_SIDES.equals(apiClient.getPositionMode())) {
+        if (!PositionMode.BOTH_SIDES.equals(apiClient.getPositionMode(getSymbol()))) {
           apiClient.setPositionMode(getSymbol(), true);
           getLogger().info(String.format("Hedge mode for trader %s set successfully", this));
         }

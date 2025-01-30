@@ -7,8 +7,8 @@ import java.io.File;
 import java.io.IOException;
 
 public class TestTools {
-  public static final String API_KEY_PROPERTY = "com.binance.api.key";
-  public static final String API_SECRET_KEY_PROPERTY = "com.binance.api.secret_key";
+  public static final String API_KEY_PROPERTY = "common.api.key";
+  public static final String API_SECRET_KEY_PROPERTY = "common.api.secret_key";
 
   public static boolean prepareEnvironment() throws IOException {
     System.setProperty("log4j.skipJansi", "false");
@@ -19,8 +19,16 @@ public class TestTools {
         LogManager.getLogger(TestTools.class).warn("Test config file's not found");
         return false;
       }*/
-      System.setProperty(API_KEY_PROPERTY, "<api_key>");
-      System.setProperty(API_SECRET_KEY_PROPERTY, "<api_secret>");
+      if (System.getenv().containsKey(API_KEY_PROPERTY)) {
+        System.setProperty(API_KEY_PROPERTY, System.getenv(API_KEY_PROPERTY));
+      } else {
+        System.setProperty(API_KEY_PROPERTY, "<api_key>");
+      }
+      if (System.getenv().containsKey(API_SECRET_KEY_PROPERTY)) {
+        System.setProperty(API_SECRET_KEY_PROPERTY, System.getenv(API_SECRET_KEY_PROPERTY));
+      } else {
+        System.setProperty(API_SECRET_KEY_PROPERTY, "<api_secret>");
+      }
     } catch (Exception e) {
       LogManager.getLogger(TestTools.class).error("Can't load test config", e);
       return false;
