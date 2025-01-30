@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration strict="true">
+
+	<Properties>
+        <Property name="log4j.skipJansi" value="false"/>
+    </Properties>
+
+	<Appenders>
+		<!--Console name="stderr" target="SYSTEM_OUT">
+			<PatternLayout pattern="%highlight{%d{dd.MM.yyyy HH:mm:ss.SSS},%t,%p,%c{1},%m%n}{FATAL=red blink, ERROR=red, WARN=yellow bold, INFO=black, DEBUG=green bold, TRACE=blue}"/>
+		</Console>
+		<Console name="stdinfo" target="SYSTEM_OUT">
+			<PatternLayout pattern="%highlight{%d{dd.MM.yy HH:mm:ss.SSS},%t,%p,%c{1},%m%n}"/>
+		</Console-->
+		<Appender type="Console" name="stdout" target="SYSTEM_OUT">
+			<Layout type="PatternLayout" charset="CP866" pattern="%highlight{%d{dd.MM.yy HH:mm:ss.SSS},%t,%p,%c{1},&#9;%m%n}{FATAL=red blink, ERROR=red bold, WARN=cyan bold, INFO=yellow bold, DEBUG=default, TRACE=grey bright}"/>
+			<!--Filter type="type" ... /-->
+            <Filters>
+                <PackageLoggingFilter packageName="ru.rexchange" level="DEBUG" onMatch="NEUTRAL" onMismatch="DENY"/>
+            </Filters>
+		</Appender>
+		<!--Console name="stdout" target="SYSTEM_OUT">
+			<PatternLayout charset="CP866" pattern="%highlight{%d{dd.MM.yy HH:mm:ss.SSS},%t,%p,%c{1},%m%n}{FATAL=red blink, ERROR=red bold, WARN=cyan bold, INFO=yellow bold, DEBUG=default}"/>
+		</Console-->
+		<Appender type="RollingFile" name="WARNFILE" fileName="logs/warn-test.out" append="true" filePattern="logs/warn-test.%i.out">
+			<Layout type="PatternLayout" pattern="%d{dd.MM.yyyy HH:mm:ss.SSS} %5p [%t] %c{1} %m%n"/>
+			<Policies>
+				<SizeBasedTriggeringPolicy size="5048KB"/>
+			</Policies>
+			<DefaultRolloverStrategy max="1"/>
+		</Appender>
+		<Appender type="RollingFile" name="ERRFILE" fileName="logs/error-test.out" append="true" filePattern="logs/error-test.%i.out">
+			<Layout type="PatternLayout" pattern="%d{dd.MM.yyyy HH:mm:ss.SSS} %5p [%t] %c{1} %m%n"/>
+			<Policies>
+				<SizeBasedTriggeringPolicy size="5048KB"/>
+			</Policies>
+			<DefaultRolloverStrategy max="1"/>
+		</Appender>
+		<!--RollingFile name="ERR" fileName="logs/error-check.out" append="true" filePattern="logs/error-check.out.%i">
+			<PatternLayout pattern="%d{dd.MM.yyyy HH:mm:ss.SSS} %5p [%t] %c{1} %m%n"/>
+			<Policies>
+				<SizeBasedTriggeringPolicy size="1024KB"/>
+			</Policies>
+			<DefaultRolloverStrategy max="5"/>
+		</RollingFile-->
+		<Appender type="RollingFile" name="FILE" fileName="logs/log-test.out" append="true" filePattern="logs/log-test.%i.out">
+			<Layout type="PatternLayout" pattern="%d{dd.MM.yyyy HH:mm:ss.SSS} %5p [%t] %c{1} %m%n"/>
+			<Policies>
+				<SizeBasedTriggeringPolicy size="40960KB"/>
+			</Policies>
+            <Filters>
+                <PackageLoggingFilter packageName="ru.rexchange" level="TRACE" onMatch="NEUTRAL" onMismatch="DENY"/>
+            </Filters>
+			<DefaultRolloverStrategy max="3"/>
+		</Appender>
+		<!--RollingFile name="FILE" fileName="logs/log-check.out" append="true" filePattern="logs/log-check.out.%i">
+			<PatternLayout pattern="%d{dd.MM.yyyy HH:mm:ss.SSS} %5p [%t] %c{1} %m%n"/>
+			<Policies>
+				<SizeBasedTriggeringPolicy size="1024KB"/>
+			</Policies>
+			<DefaultRolloverStrategy max="5"/>
+		</RollingFile-->
+	</Appenders>
+	<Loggers>
+		<Logger name="error.file" level="error">
+			<AppenderRef ref="ERRFILE"/>
+		</Logger>
+		<Logger name="warning.file" level="warn">
+			<AppenderRef ref="WARNFILE"/>
+		</Logger>
+		<!--Logger name="ru.rexchange" level="debug">
+			<AppenderRef ref="stdout"/>
+		</Logger-->
+		<Root level="trace">
+			<AppenderRef ref="FILE"/>
+			<AppenderRef ref="stdout" level="info"/>
+			<AppenderRef ref="WARNFILE" level="warn"/>
+			<AppenderRef ref="ERRFILE" level="error"/>
+		</Root>
+	</Loggers>
+</Configuration>
