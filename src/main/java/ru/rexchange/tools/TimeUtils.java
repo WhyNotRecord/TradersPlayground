@@ -16,6 +16,7 @@ public class TimeUtils {//todo SyncUtils?
     //ValidPeriods.add(1800);
     ValidPeriods.add(3600);
     ValidPeriods.add(3600 * 4);
+    ValidPeriods.add(3600 * 12);
     ValidPeriods.add(3600 * 24);
     ValidPeriods.add(3600 * 24 * 7);//для расчёта долгосрочных трендов
   }
@@ -28,6 +29,7 @@ public class TimeUtils {//todo SyncUtils?
     //PeriodSymbols.put(1800, "30m");
     PeriodSymbols.put(3600, "1h");
     PeriodSymbols.put(3600 * 4, "4h");
+    PeriodSymbols.put(3600 * 12, "12h");
     PeriodSymbols.put(3600 * 24, "1d");
     PeriodSymbols.put(3600 * 24 * 7, "1w");
   }
@@ -49,7 +51,7 @@ public class TimeUtils {//todo SyncUtils?
     return periodMs - passed;
   }
 
-  public static long getPrevPeriodStart(long periodMs) {
+  public static long getCurrentPeriodStart(long periodMs) {
     Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
     long now = cal.getTimeInMillis();
     cal.set(Calendar.ZONE_OFFSET, 0);//GMT
@@ -62,7 +64,7 @@ public class TimeUtils {//todo SyncUtils?
     return now - passed;
   }
 
-  public static long getPrevPeriodStart(long periodMs, long now) {
+  public static long getCurrentPeriodStart(long periodMs, long now) {
     Calendar cal = Calendar.getInstance(TimeZone.getTimeZone("GMT"));
     cal.set(Calendar.ZONE_OFFSET, 0);//GMT
     cal.setTimeInMillis(now);
@@ -105,12 +107,12 @@ public class TimeUtils {//todo SyncUtils?
   }
 
   public static long getMomentNPeriodsAgo(long period, int count) {
-    long nowRound = getPrevPeriodStart(period);
+    long nowRound = getCurrentPeriodStart(period);
     return nowRound - (period * count);
   }
 
   public static long getMomentNPeriodsAgo(long periodMs, int count, long now) {
-    long nowRound = getPrevPeriodStart(periodMs, now);
+    long nowRound = getCurrentPeriodStart(periodMs, now);
     return nowRound - (periodMs * count);
   }
 

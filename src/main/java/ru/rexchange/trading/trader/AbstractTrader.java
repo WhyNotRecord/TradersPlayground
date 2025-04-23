@@ -1,12 +1,19 @@
 package ru.rexchange.trading.trader;
 
 import binance.futures.enums.OrderSide;
-import org.slf4j.Logger;
+import lombok.Getter;
+import lombok.Setter;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 import ru.rexchange.data.Consts;
+import ru.rexchange.data.stat.StatisticCalculator;
 import ru.rexchange.data.storage.AbstractRate;
+import ru.rexchange.db.DatabaseInteractor;
 import ru.rexchange.gen.AppUser;
 import ru.rexchange.gen.TraderConfig;
+import ru.rexchange.tools.DateUtils;
+import ru.rexchange.tools.LoggingUtils;
 import ru.rexchange.trading.TradeTools;
 import ru.rexchange.trading.TraderAuthenticator;
 
@@ -21,11 +28,14 @@ public abstract class AbstractTrader {
 
 	protected String name = DEFAULT_TRADER;
 	protected String id = null;
+	@Getter @Setter
+	private boolean active = true;
 
 	//TODO трейдеру (фьючей) необязательно хранить каждую валюту
 	// для ордеров можно передавать в DealInfo
 	// при загрузке состояния можно передавать в параметрах при вызове из бота
 	// при сохранении состояния использовать данные из самого ордера (можно хранить в виде символа пары)
+	// однако, нужно как-то выяснять доступный баланс
 	protected String baseCurrency;
 	protected String quotedCurrency;
 	protected float baseCurrencyAmount = 0f;
@@ -34,14 +44,18 @@ public abstract class AbstractTrader {
 	protected float quotedCurrencyTotalAmount = 0f;
 	protected AmountDeterminant amountDeterminant;
 	protected double amountValue = 10.0;
-	protected float freeFundsDealCoefficient = 0.5f;
+	@Setter
+  @Getter
+  protected float freeFundsDealCoefficient = 0.5f;
 	protected float freeFundsMarginCoefficient = 0.25f;//todo определять в зависимости от риска
+	@Getter
 	protected String tgChatId = null;
 	protected boolean allowFartherStopLoss = false;
 	protected boolean allowUnprofitableTakeProfit = false;
 	private TraderAuthenticator authenticator;
 	protected boolean openByMarket = false;
 	protected final Set<ActionListener> listeners = new HashSet<>();
+	private  Float maximumLossAllowed = null;//0.5f;//todo configurable
 
 	public static float evaluateProfit(float openRate, float closeRate, BigDecimal amount, String side) {
 		float diff = closeRate * amount.floatValue() - openRate * amount.floatValue();
@@ -75,7 +89,7 @@ public abstract class AbstractTrader {
 	}
 
 	public AbstractTrader(TraderConfig trader) {
-		this(trader.getName(), AmountDeterminant.valueOf(trader.getDealAmountType()), trader.getDealAmountSize());
+		this(trader.getName(), AbstractTrader.AmountDeterminant.valueOf(trader.getDealAmountType()), trader.getDealAmountSize());
 		this.id = trader.getId();
 	}
 
@@ -107,22 +121,28 @@ public abstract class AbstractTrader {
 		requestCurrenciesAmount();
 	}
 
+	public String setQuotedCurrency(String symbol) {
+		if (!Objects.equals(this.quotedCurrency, symbol)) {
+			this.quotedCurrency = symbol;
+			requestCurrenciesAmount();
+			return String.format("Reconfigure trader %s. New quotedCurrency = %s", getName(), symbol);
+		}
+		return null;
+	}
+
 	public Integer getLeverage() {
 		return 1;
 	}
 
 	public abstract void requestCurrenciesAmount();
 
-	public float getFreeFundsDealCoefficient() {
-		return freeFundsDealCoefficient;
-	}
+	public abstract float getSummaryProfit(float rate);
 
-	public void setFreeFundsDealCoefficient(float value) {
-		freeFundsDealCoefficient = value;
-	}
-
-	public String canBuy(float desiredRate) {
+  public String canBuy(float desiredRate) {
+		if (!isActive())
+			return "Trader is disabled";
 		requestCurrenciesAmount();
+		//todo о некоторых причинах следовало бы уведомлять пользователя, как их разделять?
 		if (quotedCurrencyAmount < 0.01)
 			return "No Money? No Funny Bunny, Honey!";
 		double dealAmount = getDealAmount(desiredRate, true);
@@ -142,7 +162,10 @@ public abstract class AbstractTrader {
 	public abstract boolean preOpenBuy(DealInfo info);
 
 	public String canSell(float desiredRate) {
+		if (!isActive())
+			return "Trader is disabled";
 		requestCurrenciesAmount();
+		//todo о некоторых причинах следовало бы уведомлять пользователя, как их разделять?
 		if (quotedCurrencyAmount < 0.01)
 			return "No Money? No Funny Bunny, Honey!";
 		double dealAmount = getDealAmount(desiredRate, false);
@@ -179,7 +202,7 @@ public abstract class AbstractTrader {
 		return allowFartherStopLoss;
 	}
 
-	public abstract boolean checkOpenedPositions(AbstractRate<?> lastRate);
+	public abstract boolean checkOpenedPositions(AbstractRate<? extends Number> lastRate);
 
 	public abstract void saveOrdersState();
 
@@ -227,8 +250,14 @@ public abstract class AbstractTrader {
 	}
 
 	protected boolean notifyUser(String message, String filename) {
-		getLogger().info(AbstractTrader.removeHtmlTags(message));
+		getLogger().info(message);
 		return false;
+	}
+
+	@NotNull
+	private String formatMessage(String message) {
+		return String.format("<b>%s</b>:\n" + message, getName()).
+				replace("<<", "<b>").replace(">>", "</b>");
 	}
 
 	public static String removeHtmlTags(String html) {
@@ -270,15 +299,12 @@ public abstract class AbstractTrader {
 	}
 
 	protected AppUser findOwnerUser() {
-		AppUser user = new AppUser();
-		user.setUserName("admin");
-		return user;
-		/*try {
+		try {
 			return DatabaseInteractor.findOwnerUser(getId());
 		} catch (Exception e) {
 			LoggingUtils.logError(getLogger(), e, "Can't find owner of trader " + getId());
 			return null;
-		}*/
+		}
 	}
 
 	/**
@@ -294,6 +320,9 @@ public abstract class AbstractTrader {
 			}
 			case "telegramNotificationsChat" -> {
 				return setTgChatId(value);
+			}
+			case "quotedCurrency" -> {
+				return setQuotedCurrency(value);
 			}
 			default -> {
 				return "Unknown parameter: " + name;
@@ -318,7 +347,7 @@ public abstract class AbstractTrader {
 				return TradeTools.inverse(rate, ((double) quotedCurrencyAmount * amountValue * getLeverage()) / 100);
 			}
 			default -> {
-				getLogger().warn("Unknown amount determinant type: " + amountDeterminant);
+        getLogger().warn("Unknown amount determinant type: {}", amountDeterminant);
 				return 0;
 			}
 		}
@@ -328,91 +357,155 @@ public abstract class AbstractTrader {
 		return String.format("Base cur: %s. Quoted cur: %s.", baseCurrencyAmount, quotedCurrencyAmount);
 	}
 
-	protected boolean checkTakeProfit(AbstractPositionContainer position, float takeProfit, float delta) {
+	protected String checkStopLoss(DealInfo info, AbstractPositionContainer position, float delta) {
+		boolean forceSLChange = info.hasParameter(DealInfo.PARAM_FORCE_STOP_CHANGE) &&
+				(boolean) info.getParameter(DealInfo.PARAM_FORCE_STOP_CHANGE);
+		if (forceSLChange)
+			return null;
+		Float stopLoss = info.getStopLoss();
+		if (position.getStopLossOrder() != null) {
+			if (StatisticCalculator.valuesAlmostEquals(position.getStopLossOrder().getPrice(), stopLoss, delta))
+				return "New stop-loss is too close to the existing one";
+			if (hasBetterStopLoss(position, stopLoss, delta))
+				return "New stop-loss is worse than the existing one";
+		}
+		Float maximumLoss = getMaxLossAllowed();
+		if (maximumLoss != null) {
+			float profit = position.getExpectedProfit(stopLoss);
+			if (profit < 0f && profit < -maximumLoss)
+				return "Expected loss is too large: " + profit;
+		}
+		return null;
+	}
+
+	private Float getMaxLossAllowed() {
+		if (maximumLossAllowed == null)
+			return null;
+		if (maximumLossAllowed > 1f)
+			return maximumLossAllowed;
+		if (maximumLossAllowed > 0f)
+			return quotedCurrencyAmount * maximumLossAllowed;//todo depends on amountDeterminant?
+		return null;
+	}
+
+	protected String checkTakeProfit(DealInfo info, AbstractPositionContainer position, float delta) {
 		if (allowUnprofitableTakeProfit)
-			return true;
-		/*if (position.getTakeProfitOrder() != null &&
-				StatisticCalculator.valuesAlmostEquals(position.getTakeProfitOrder().getPrice(), takeProfit, delta))
-			return false;*/
+			return null;
+		boolean forceTPChange = info.hasParameter(DealInfo.PARAM_FORCE_STOP_CHANGE) &&
+				(boolean) info.getParameter(DealInfo.PARAM_FORCE_STOP_CHANGE);
+		if (forceTPChange)
+			return null;
+		Float takeProfit = info.getTakeProfit();
+		if (position.getTakeProfitOrder() != null) {
+			if (StatisticCalculator.valuesAlmostEquals(position.getTakeProfitOrder().getPrice(), takeProfit, delta))
+				return "New take-profit is too close to the existing one";
+		}
 		String side = position.getSide();
 		if (Consts.BUY.equals(side)) {
-			return takeProfit > position.getPositionInfo().getAveragePrice();
+			return takeProfit > position.getPositionInfo().getAveragePrice() ? null : "New take-profit is lossy";
 		} else {
-			return takeProfit < position.getPositionInfo().getAveragePrice();
+			return takeProfit < position.getPositionInfo().getAveragePrice() ? null : "New take-profit is lossy";
 		}
 	}
 
 	protected boolean hasBetterStopLoss(AbstractPositionContainer position, Float newStopLoss, float delta) {
-		if (position.getStopLossOrder() == null || isFartherStopLossAllowed())
-			return false;
+		//todo возвращать описание причины
 		if (newStopLoss == null)
 			return true;
-		//Float positionPrice = position.getPositionInfo().getAveragePrice();
+		if (position.getStopLossOrder() == null)
+			return false;
+		int direction = Consts.BUY.equals(position.getSide()) ? Consts.Direction.UP : Consts.Direction.DOWN;
 		float curSl = position.getStopLossOrder().getPrice();
-		getLogger().debug("Has better stop loss? POS: " + position.getPositionInfo().getAveragePrice() +
-				", CUR_SL: " + curSl + ", NEW_SL: " + newStopLoss + ", delta: " + delta);
+		float posAvgValue = position.getAvgPrice().floatValue();
 
+		// проверяем на убыточность нового стоп-лосса по сравнению с текущим, безубыточный на убыточный не меняем
+		boolean newStopLossIsLossy = direction * (newStopLoss - posAvgValue) < 0;
+		boolean curStopLossIsProfitable = direction * (curSl - posAvgValue) > 0;
+		if (curStopLossIsProfitable && newStopLossIsLossy) {
+			return true;
+		}
+
+		// по настройке можем отодвигать только убыточные стоп-лоссы
+		if (isFartherStopLossAllowed() && newStopLossIsLossy)
+			return false;
+    getLogger().debug("Has better stop loss? POS: {}, CUR_SL: {}, NEW_SL: {}, delta: {}",
+				posAvgValue, curSl, newStopLoss, delta);
+
+		/*boolean oldResult;
 		if (Consts.BUY.equals(position.getSide()))
 			//return curSl > newStopLoss * (1.f + delta);
-			return newStopLoss < curSl * (1.f + delta);
+			oldResult = newStopLoss < curSl * (1.f + delta);
 		else
 			//return curSl < newStopLoss * (1.f - delta);
-			return newStopLoss > curSl * (1.f - delta);
-		/*float currentSlRange = Math.abs(positionPrice - position.getStopLossOrder().getPriceF());
-		float newSlRange = Math.abs(positionPrice - newStopLoss);
-		return newSlRange >= currentSlRange;*/
+			oldResult = newStopLoss > curSl * (1.f - delta);*/
+
+		//проверка на то, что новый стоп-лосс как минимум на delta лучше текущего
+		boolean decline = newStopLoss * direction < curSl * direction * (1 + delta * direction);
+		/*if (oldResult != decline)
+			LOGGER.warn("It cant be {} != {}", oldResult, decline);*/
+		return decline;
 	}
 
 	protected String preparePreDealNotificationMessage(float price, boolean buy) {
-		return String.format("%s. Preparing to open %s deal on %s:%s. Price: %.4f",
-				this, buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, price);
+		return String.format("Preparing to open %s deal on %s:%s. Price: %.4f",
+				buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, price);
 	}
 
 	protected String prepareDealNotificationMessage(float price, double amount, Float tp, Float sl, boolean buy) {
-		return String.format("<b>%s</b>: Opened %s deal on %s:%s. Price: %.4f (TP:%.4f/SL:%.4f), amount: %.4f",
-				getName(), buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, price, tp, sl, amount);
+		return String.format("Opened %s deal on %s:%s.\nPrice: %.4f (TP:%.4f/SL:%.4f), amount: %.4f",
+				buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, price, tp, sl, amount);
 	}
 
 	protected String prepareDealFailedNotificationMessage(String message, boolean buy) {
-		return String.format("<b>%s</b>: Opening %s deal on %s:%s failed. %n%s",
-				getName(), buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, message);
+		return String.format("Opening %s deal on %s:%s failed. %n%s",
+				buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, message);
 	}
 
-	protected String prepareDealClosedNotificationMessage(String side, Float rate, Float profit, String initiator) {
-		return String.format("<b>%s</b>: %s deal on %s:%s closed (by %s) at %s with profit = %.2f",
-				getName(), side, baseCurrency, quotedCurrency, initiator, rate, profit);
+	protected String prepareDealClosedNotificationMessage(String side, Float rate, long closeTime, Float profit, String initiator) {
+		return String.format("%s deal on %s:%s closed (by %s) at %s (%s).\n<<Profit = %.2f>>",
+				side, baseCurrency, quotedCurrency, initiator, rate, DateUtils.formatTimeMin(closeTime), profit);
+	}
+
+	protected String preparePositionPartiallyClosedNotificationMessage(String side, Float rate, long closeTime, String initiator) {
+		return String.format("%s deal on %s:%s partially closed (by %s) at %s (%s) ",
+				side, baseCurrency, quotedCurrency, initiator, rate, DateUtils.formatTimeMin(closeTime));
 	}
 
 	protected String prepareStopChangedNotificationMessage(String side, String stopType, Float stopRate,
 																												 float expectedProfit, String strategy) {
-		return String.format("<b>%s</b>: %s for %s deal on %s:%s changed (%s). New value: %s. Expected profit: %.2f",
-				getName(), stopType, side, baseCurrency, quotedCurrency, strategy, stopRate, expectedProfit);
+		return String.format("%s for %s deal on %s:%s changed (%s). New value: %s.\n<<Expected profit: %.2f>>",
+				stopType, side, baseCurrency, quotedCurrency, strategy, stopRate, expectedProfit);
+	}
+
+	protected String prepareStopRemovedNotificationMessage(String side, String stopType, String strategy) {
+		return String.format("%s for %s deal on %s:%s removed (%s)",
+				stopType, side, baseCurrency, quotedCurrency, strategy);
 	}
 
 	protected String prepareStopNotChangedNotificationMessage(String side, String stopType, Float stopRate, String strategy) {
-		return String.format("<b>%s. Warning</b>: %s for %s deal on %s:%s can not be changed (%s) on %s",
-				getName(), stopType, side, baseCurrency, quotedCurrency, strategy, stopRate);
+		return String.format("<<Warning>>:\n%s for %s deal on %s:%s can not be changed (%s) on %s",
+				stopType, side, baseCurrency, quotedCurrency, strategy, stopRate);
 	}
 
 	protected String prepareExpiredOrderCancelledMessage(String direction, String positionId) {
-		return String.format("<b>%s</b>: %s order (position: %s) on %s:%s wasn't filled and was cancelled",
-				getName(), direction, positionId, baseCurrency, quotedCurrency);
+		return String.format("%s order (position: %s) on %s:%s wasn't filled and was cancelled",
+				direction, positionId, baseCurrency, quotedCurrency);
 	}
 
 	protected String preparePositionErrorMessage(String direction, String positionId) {
-		return String.format("<b>%s</b>: %s position (%s) on %s:%s caused an error.\n" +
+		return String.format("%s position (%s) on %s:%s caused an error.\n" +
 						"Position removed from tracking, please, close it on your own!",
-				getName(), direction, positionId, baseCurrency, quotedCurrency);
+				direction, positionId, baseCurrency, quotedCurrency);
 	}
 
 	protected String prepareNotActualStopsMessage(String direction, String positionId) {
-		return String.format("<b>%s</b>: Stop-loss & take-profit for %s position %s on  %s:%s are not actual. Removing position",
-				getName(), direction, positionId, baseCurrency, quotedCurrency);
+		return String.format("Stop-loss & take-profit for %s position %s on  %s:%s are not actual. Removing position",
+				direction, positionId, baseCurrency, quotedCurrency);
 	}
 
 	protected String prepareOrderFailedNotificationMessage(String message, boolean buy) {
-		return String.format("<b>%s</b>: Posting %s order on %s:%s failed. %n%s",
-				getName(), buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, message);
+		return String.format("Posting %s order on %s:%s failed. %n%s",
+				buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, message);
 	}
 
 	public String getName() {
@@ -447,6 +540,9 @@ public abstract class AbstractTrader {
 		public static final String PARAM_LAST_RATE = "last_rate";
 		public static final String PARAM_MANUAL_LIMIT = "manual_limit";
 		public static final String PARAM_POSITION_TIME = "position_open_time";
+		public static final String PARAM_LAST_ORDER_TIME = "last_order_open_time";
+		public static final String PARAM_ORDERS_COUNT = "orders_count";
+		public static final String PARAM_POSITION_WEIGHT = "position_weight";
 		public static final String PARAM_FILTERED_DEAL = "filtered_deal";
 		public static final String PARAM_FORCE_STOP_CHANGE = "FORCE_STOP_CHANGE";
 		private float dealRate;

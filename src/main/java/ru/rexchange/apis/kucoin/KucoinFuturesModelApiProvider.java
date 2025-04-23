@@ -4,9 +4,9 @@ import com.kucoin.futures.core.KucoinFuturesClientBuilder;
 import com.kucoin.futures.core.KucoinFuturesPublicWSClient;
 import com.kucoin.futures.core.KucoinFuturesRestClient;
 import com.kucoin.futures.core.rest.response.TickerResponse;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
+import org.jetbrains.annotations.NotNull;
 import ru.rexchange.exception.SystemException;
 import ru.rexchange.tools.*;
 
@@ -51,9 +51,9 @@ public class KucoinFuturesModelApiProvider {
   //TODO продумать механизм синхронизации, чтобы не быть забаненым за активный DDOS API
   public static List<String> getLastCandle(String[] pair, int period) throws Exception {
     String symbol = evaluateSymbol(pair);
-    long now = TimeUtils.getPrevPeriodStart(period * 60 * 1000L, DateUtils.currentTimeMillis());
+    long now = TimeUtils.getCurrentPeriodStart(period * 60 * 1000L);
     long start = now - period * 60 * 1000L;
-    LOGGER.trace(String.format("Requesting last candles with params: %s, %s, %s, %s", symbol, period, start, now));
+    LOGGER.trace("Requesting last candles with params: {}, {}, {}, {}", symbol, period, start, now);
     List<List<String>> result = getClient().kChartAPI().getKChart(symbol, period, start - 1, now - 1);
     if (result.isEmpty() || result.size() > 2)
       throw new SystemException("Unexpected number of data items: " + result.size());

@@ -101,7 +101,7 @@ public class BinanceFuturesApiProvider {
     }
   }
 
-  public static Candle getLastPrice(String symbol) {
+  public static synchronized Candle getLastPrice(String symbol) {
     try {
       //todo кешировать хотя бы на секунду
       return Utils.executeInFewAttempts(() -> {

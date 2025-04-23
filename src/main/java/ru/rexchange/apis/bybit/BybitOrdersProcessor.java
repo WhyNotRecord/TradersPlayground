@@ -113,13 +113,22 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor {
     }
 
     @Override
+    public OrderInfoObject closePartially(AbstractSignedClient apiAccess, BigDecimal amount) {
+      return null;//todo implement
+    }
+
+    @Override
     public boolean cancelSafetyOrders(AbstractSignedClient apiAccess) {
       return false;
     }
 
     @Override
-    public Object rearrangeTakeProfit(AbstractSignedClient apiAccess, BigDecimal newTp) {
-      return null;
+    public boolean rearrangeTakeProfit(AbstractSignedClient apiAccess, BigDecimal newTp) {
+      if (!(apiAccess instanceof BybitSignedClient)) {
+        LOGGER.warn("Can't rearrange take-profit: no valid client provided");
+        return false;
+      }
+      return false;
     }
 
     @Override
@@ -127,6 +136,7 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor {
       return null;
     }
 
+    @Deprecated
     @Override
     public OrderInfoObject getBaseOrder() {
       return null;

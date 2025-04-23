@@ -81,7 +81,7 @@ public class KucoinFuturesApiProvider {
     return null;
   }
 
-  public static TickerResponse getLastPrice(String symbol) {
+  public static synchronized TickerResponse getLastPrice(String symbol) {
     try {
       //todo кешировать хотя бы на секунду
       return Utils.executeInFewAttempts(() ->

@@ -30,7 +30,7 @@ public class BinanceFuturesModelApiProvider {
   //https://www.binance.com/en/support/faq/api-frequently-asked-questions-360004492232
   public static Candle getLastCandle(String[] pair, int period) throws Exception {
     String symbol = evaluateSymbol(pair);
-    long now = TimeUtils.getPrevPeriodStart(period * 1000L, DateUtils.currentTimeMillis());
+    long now = TimeUtils.getCurrentPeriodStart(period * 1000L, DateUtils.currentTimeMillis());
     long start = now - period * 1000L;
     List<Candle> result = UnsignedClient.getKlines(symbol, getIntervalType(period), 1, start);
     Optional<Candle> requestedCandle =

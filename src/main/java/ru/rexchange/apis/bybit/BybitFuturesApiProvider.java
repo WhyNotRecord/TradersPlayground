@@ -1,6 +1,5 @@
 package ru.rexchange.apis.bybit;
 
-import binance.futures.model.Candle;
 import ru.rexchange.trading.trader.BybitSignedClient;
 
 public class BybitFuturesApiProvider {

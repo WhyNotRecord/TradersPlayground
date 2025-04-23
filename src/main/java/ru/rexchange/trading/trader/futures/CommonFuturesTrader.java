@@ -1,11 +1,13 @@
 package ru.rexchange.trading.trader.futures;
 
+import lombok.Getter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.rexchange.data.Consts;
 import ru.rexchange.data.storage.AbstractRate;
+import ru.rexchange.db.DatabaseInteractor;
 import ru.rexchange.exception.UserException;
 import ru.rexchange.gen.*;
 import ru.rexchange.tools.*;
@@ -16,11 +18,13 @@ import ru.rexchange.trading.trader.AbstractTrader;
 
 import java.math.BigDecimal;
 import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.sql.Timestamp;
-import java.util.Locale;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+//TODO вынести, что можно, в AbstractTrader (что востребовано для спотовой торговли)
 public abstract class CommonFuturesTrader extends AbstractTrader {
   protected static Logger LOGGER = LoggerFactory.getLogger(CommonFuturesTrader.class);
   private static final Integer DEFAULT_LEVERAGE_VALUE = 2;
@@ -35,9 +39,14 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
   private boolean storeOrdersInDatabase = true;
   private boolean attachToExistingPositions = false;
   private long newOrderLivePeriod = 5 * 60 * 1000L;
+  @Getter
   private float safetyOrdersAmountAddedPercent = 0.f;
+  @Getter
+  private Float safetyOrdersAdditionFactor = null;
+  @Getter
   private int maxSafetyOrdersLimit = 5;
   private float lastAppc = 0.f;
+  private Float dealMarginLimit = 0.5f;//todo configurable
 
   public CommonFuturesTrader(String name, AmountDeterminant amountDeterminant, float amountValue) {
     super(name, amountDeterminant, amountValue);
@@ -82,7 +91,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         }
       }
     } catch (Exception e) {
-      LoggingUtils.logError(getLogger(), e,"Error occurred while opening BUY order");
+      LoggingUtils.logError(getLogger(), e,"Error occurred while opening BUY order by " + this);
       notifyUser(prepareDealFailedNotificationMessage(e.getMessage(), true));
     }
     if (position == null) {
@@ -102,7 +111,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
 
   public boolean marketBuy(Double dealAmount) {
     //TODO отменять страховочные и переставлять stop-loss у открытого SELL-ордера
-    getLogger().info(String.format("Opening market BUY deal on %s", getSymbol()));
+    getLogger().info("Opening market BUY deal on {}", getSymbol());
     AbstractPositionContainer position = null;
     try {
       if (dealAmount == null) {
@@ -117,7 +126,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         dealOpened();
       }
     } catch (Exception e) {
-      LoggingUtils.logError(getLogger(), e, "Error occurred while opening BUY order");
+      LoggingUtils.logError(getLogger(), e,"Error occurred while opening BUY order by " + this);
       notifyUser(prepareDealFailedNotificationMessage(e.getMessage(), true));
     }
     if (position == null) {
@@ -166,7 +175,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         }
       }
     } catch (Exception e) {
-      LoggingUtils.logError(getLogger(), e, "Error occurred while opening SELL order");
+      LoggingUtils.logError(getLogger(), e, "Error occurred while opening SELL order by " + this);
       notifyUser(prepareDealFailedNotificationMessage(e.getMessage(), false));
     }
 
@@ -186,7 +195,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
 
   public boolean marketSell(Double dealAmount) {
     //TODO отменять страховочные и переставлять stop-loss у открытого SELL-ордера
-    getLogger().info(String.format("Opening market SELL deal on %s", getSymbol()));
+    getLogger().info("Opening market SELL deal on {}", getSymbol());
     AbstractPositionContainer position = null;
     try {
       if (dealAmount == null) {
@@ -201,7 +210,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         dealOpened();
       }
     } catch (Exception e) {
-      LoggingUtils.logError(getLogger(), e, "Error occurred while opening SELL order");
+      LoggingUtils.logError(getLogger(), e, "Error occurred while opening SELL order by " + this);
       notifyUser(prepareDealFailedNotificationMessage(e.getMessage(), false));
     }
     if (position == null) {
@@ -224,7 +233,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
   public OrderInfoObject limitBuy(DealInfo info) {
     float desiredRate = info.getDealRate();
     String symbol = getSymbol();
-    getLogger().info(String.format("Posting limit BUY order on %s: %s", symbol, desiredRate));
+    getLogger().info("Posting limit BUY order on {}: {}", symbol, desiredRate);
     double dealAmount = getDealAmount(desiredRate, true);
     OrderInfoObject order = null;
     try {
@@ -240,7 +249,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         }
       }
     } catch (Exception e) {
-      LoggingUtils.logError(getLogger(), e, "Error occurred while posting limit BUY order");
+      LoggingUtils.logError(getLogger(), e, "Error occurred while posting limit BUY order by " + this);
       notifyUser(prepareOrderFailedNotificationMessage(e.getMessage(), true));
     }
 
@@ -252,7 +261,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
   public OrderInfoObject limitSell(DealInfo info) {
     float desiredRate = info.getDealRate();
     String symbol = getSymbol();
-    getLogger().info(String.format("Posting limit SELL order on %s: %s", symbol, desiredRate));
+    getLogger().info("Posting limit SELL order on {}: {}", symbol, desiredRate);
     double dealAmount = getDealAmount(desiredRate, false);
     OrderInfoObject order = null;
     try {
@@ -269,7 +278,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         }
       }
     } catch (Exception e) {
-      LoggingUtils.logError(getLogger(), e, "Error occurred while posting limit SELL order");
+      LoggingUtils.logError(getLogger(), e, "Error occurred while posting limit SELL order by " + this);
       notifyUser(prepareOrderFailedNotificationMessage(e.getMessage(), false));
     }
 
@@ -281,10 +290,17 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     if (hasOpenedLongPositions()) {
       float closingRate = info != null ? info.getDealRate() : 0.f;
       String strategy = info != null ? String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY)) : "unknown";
-      getLogger().info(String.format("%s. Closing BUY deal on %s by request (%s) at %s",
-          getName(), getSymbol(), strategy, closingRate));
+      getLogger().info("{}. Closing BUY deal on {} by request ({}) at {}", getName(), getSymbol(), strategy, closingRate);
       //Обновляем позицию, чтобы точно знать выполненный объём ордера, а также проверить, не закрылась ли она уже
-      getLongPosition().update(getSignedClient());
+      try {
+        getLongPosition().update(getSignedClient());
+        if (!getLongPosition().getPositionInfo().onStatusOpen()) {
+          getLogger().info("{}. Long position isn't open, quitting...", getName());
+          return false;
+        }
+      } catch (Exception e) {
+        getLogger().warn("Error occurred while updating long position", e);
+      }
       BigDecimal positionAmount = getLongPosition().getAvgPrice().multiply(getLongPosition().getExecutedAmount());
       getLongPosition().cancelSafetyOrders(getSignedClient());
       OrderInfoObject closeOrder = getLongPosition().closeDeal(getSignedClient());
@@ -299,11 +315,47 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
             getLogger());
         accountProfit(profit, getLongPosition());
         finishPosition(getLongPosition(), closeTime, strategy);
-        notifyUser(prepareDealClosedNotificationMessage("BUY", closeOrder.getPrice(), profit, strategy));
+        notifyUser(prepareDealClosedNotificationMessage("BUY", closeOrder.getPrice(), closeTime, profit, strategy));
         longPosition = null;
         return true;
       } else {
         //todo завершить позицию, уведомить пользователя о неуспешном закрытии
+      }
+    }
+    return false;
+  }
+
+  public boolean closeBuyPartially(DealInfo info) {
+    if (hasOpenedLongPositions()) {
+      float closingRate = info != null ? info.getDealRate() : 0.f;
+      String strategy = info != null ? String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY)) : "unknown";
+      Integer count = info != null ? (Integer) info.getParameter(DealInfo.PARAM_ORDERS_COUNT) : 1;
+      if (count == null || count <= 0) {
+        getLogger().info("{}. Unexpected parameter for partial closing, quitting...", getName());
+      }
+      getLogger().info("{}. Closing {} BUY order(s) on {} by request ({}) at {}",
+          getName(), count, getSymbol(), strategy, closingRate);
+      //Обновляем позицию, чтобы точно знать выполненный объём ордера, а также проверить, не закрылась ли она уже
+      try {
+        getLongPosition().update(getSignedClient());
+        if (!getLongPosition().getPositionInfo().onStatusOpen()) {
+          getLogger().info("{}. Long position isn't open, quitting...", getName());
+          return false;
+        }
+      } catch (Exception e) {
+        getLogger().warn("Error occurred while updating long position", e);
+      }
+      getLongPosition().cancelSafetyOrders(getSignedClient());
+      BigDecimal amount = getLongPosition().getLastOrdersWeight(count);
+      OrderInfoObject closeOrder = getLongPosition().closePartially(getSignedClient(), amount);
+      if (closeOrder != null) {
+        long closeTime = closeOrder.getOrderTimestamp().getTime();
+        notifyUser(preparePositionPartiallyClosedNotificationMessage("BUY", closeOrder.getPrice(), closeTime, strategy));
+        return true;
+      } else {
+        getLogger().warn("{}. Unsuccessful partial long position closing", getName());
+        //todo уведомить пользователя о неудаче
+        return false;
       }
     }
     return false;
@@ -314,10 +366,17 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     if (hasOpenedShortPositions()) {
       float closingRate = info != null ? info.getDealRate() : 0.f;
       String strategy = info != null ? String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY)) : "unknown";
-      getLogger().info(String.format("%s. Closing SELL deal on %s by request (%s) at %s",
-          getName(), getSymbol(), strategy, closingRate));
+      getLogger().info("{}. Closing SELL deal on {} by request ({}) at {}", getName(), getSymbol(), strategy, closingRate);
       //Обновляем позицию, чтобы точно знать выполненный объём ордера, а также проверить, не закрылась ли она уже
-      getShortPosition().update(getSignedClient());
+      try {
+        getShortPosition().update(getSignedClient());
+        if (!getShortPosition().getPositionInfo().onStatusOpen()) {
+          getLogger().info("{}. Short position isn't open, quitting...", getName());
+          return false;
+        }
+      } catch (Exception e) {
+        getLogger().warn("Error occurred while updating short position", e);
+      }
       BigDecimal positionAmount = getShortPosition().getAvgPrice().multiply(getShortPosition().getExecutedAmount());
       getShortPosition().cancelSafetyOrders(getSignedClient());
       OrderInfoObject closeOrder = getShortPosition().closeDeal(getSignedClient());
@@ -332,11 +391,47 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
             getLogger());
         accountProfit(profit, getShortPosition());
         finishPosition(getShortPosition(), closeTime, strategy);
-        notifyUser(prepareDealClosedNotificationMessage("SELL", closeOrder.getPrice(), profit, strategy));
+        notifyUser(prepareDealClosedNotificationMessage("SELL", closeOrder.getPrice(), closeTime, profit, strategy));
         shortPosition = null;
         return true;
       } else {
         //todo завершить позицию, уведомить пользователя о неуспешном закрытии
+      }
+    }
+    return false;
+  }
+
+  public boolean closeSellPartially(DealInfo info) {
+    if (hasOpenedShortPositions()) {
+      float closingRate = info != null ? info.getDealRate() : 0.f;
+      String strategy = info != null ? String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY)) : "unknown";
+      Integer count = info != null ? (Integer) info.getParameter(DealInfo.PARAM_ORDERS_COUNT) : 1;
+      if (count == null || count <= 0) {
+        getLogger().info("{}. Unexpected parameter for partial closing, quitting...", getName());
+      }
+      getLogger().info("{}. Closing {} SELL order(s) on {} by request ({}) at {}",
+          getName(), count, getSymbol(), strategy, closingRate);
+      //Обновляем позицию, чтобы точно знать выполненный объём ордера, а также проверить, не закрылась ли она уже
+      try {
+        getShortPosition().update(getSignedClient());
+        if (!getShortPosition().getPositionInfo().onStatusOpen()) {
+          getLogger().info("{}. Short position isn't open, quitting...", getName());
+          return false;
+        }
+      } catch (Exception e) {
+        getLogger().warn("Error occurred while updating short position", e);
+      }
+      getShortPosition().cancelSafetyOrders(getSignedClient());
+      BigDecimal amount = getShortPosition().getLastOrdersWeight(count);
+      OrderInfoObject closeOrder = getShortPosition().closePartially(getSignedClient(), amount);
+      if (closeOrder != null) {
+        long closeTime = closeOrder.getOrderTimestamp().getTime();
+        notifyUser(preparePositionPartiallyClosedNotificationMessage("SELL", closeOrder.getPrice(), closeTime, strategy));
+        return true;
+      } else {
+        getLogger().warn("{}. Unsuccessful partial short position closing", getName());
+        //todo уведомить пользователя о неудаче
+        return false;
       }
     }
     return false;
@@ -359,38 +454,54 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
   }
 
   private boolean changeOrderStopLevel(DealInfo info, AbstractPositionContainer position) {
-    getLogger().debug(this + ". changeOrderStopLevel, DealInfo: " + info);
+    getLogger().debug("{}. changeOrderStopLevel, DealInfo: {}", this, info);
     if (position == null) {
-      getLogger().warn("Trying to adjust stop-orders for non-existing position on " + getSymbol());
+      getLogger().warn("Trying to adjust stop-orders for non-existing position on {}", getSymbol());
       return false;
     }
     //todo можно по настройке на уровне SL выставлять трейлинг стоп на новую сделку в том же направлении
-    boolean forceSLChange = info.hasParameter(DealInfo.PARAM_FORCE_STOP_CHANGE) &&
-        (boolean) info.getParameter(DealInfo.PARAM_FORCE_STOP_CHANGE);
     boolean result = false;
     StringBuilder sb = new StringBuilder();
-    if (info.getStopLoss() != null && (forceSLChange || !hasBetterStopLoss(position, info.getStopLoss(), 0.00025f))) {
-      if (position.rearrangeStopLoss(getSignedClient(), BigDecimal.valueOf(info.getStopLoss())) != null) {
-        sb.append(prepareStopChangedNotificationMessage(position.getSide(), "Stop-loss",
-            info.getStopLoss(), position.getExpectedProfit(position.getStopLossOrder().getPrice()),
-            String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
-        result = true;
-      } else {//todo по-хорошему надо бы пробрасывать как-то причину
-        sb.append(prepareStopNotChangedNotificationMessage(position.getSide(), "Stop-loss", info.getStopLoss(),
-            String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
+    //todo delta определять в зависимости от APPC
+    float delta = 0.001f;
+    if (info.getStopLoss() != null) {
+      String rejectCause = checkStopLoss(info, position, delta);
+      if (rejectCause == null) {
+        if (position.rearrangeStopLoss(getSignedClient(), BigDecimal.valueOf(info.getStopLoss())) != null) {
+          sb.append(prepareStopChangedNotificationMessage(position.getSide(), "Stop-loss",
+              info.getStopLoss(), position.getExpectedProfit(position.getStopLossOrder().getPrice()),
+              String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
+          result = true;
+        } else {//todo по-хорошему надо бы пробрасывать как-то причину
+          sb.append(prepareStopNotChangedNotificationMessage(position.getSide(), "Stop-loss", info.getStopLoss(),
+              String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
+        }
+      } else {
+        getLogger().debug("{} {}", this, rejectCause);
       }
     }
-    if (info.getTakeProfit() != null && checkTakeProfit(position, info.getTakeProfit(), 0.0005f)) {
-      if (position.rearrangeTakeProfit(getSignedClient(), BigDecimal.valueOf(info.getTakeProfit())) != null) {
-        if (!sb.isEmpty())
-          sb.append(System.lineSeparator());
-        sb.append(prepareStopChangedNotificationMessage(position.getSide(), "Take-profit",
-            info.getTakeProfit(), position.getExpectedProfit(position.getTakeProfitOrder().getPrice()),
-            String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
-        result = true;
-      } else {//todo по-хорошему надо бы пробрасывать как-то причину
-        sb.append(prepareStopNotChangedNotificationMessage(position.getSide(), "Take-profit", info.getStopLoss(),
-            String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
+    if (info.getTakeProfit() != null) {
+      String rejectCause = checkTakeProfit(info, position, delta);
+      if (rejectCause == null) {
+        if (position.rearrangeTakeProfit(getSignedClient(), BigDecimal.valueOf(info.getTakeProfit())) ||
+            info.getTakeProfit() == 0) {
+          if (!sb.isEmpty())
+            sb.append(System.lineSeparator());
+          if (position.getTakeProfitOrder() != null) {
+            sb.append(prepareStopChangedNotificationMessage(position.getSide(), "Take-profit",
+                info.getTakeProfit(), position.getExpectedProfit(position.getTakeProfitOrder().getPrice()),
+                String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
+          } else {
+            sb.append(prepareStopRemovedNotificationMessage(position.getSide(), "Take-profit",
+                String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
+          }
+          result = true;
+        } else {//todo по-хорошему надо бы пробрасывать как-то причину
+          sb.append(prepareStopNotChangedNotificationMessage(position.getSide(), "Take-profit", info.getStopLoss(),
+              String.valueOf(info.getParameter(DealInfo.PARAM_STRATEGY))));
+        }
+      } else {
+        getLogger().debug("{} {}", this, rejectCause);
       }
     }
     if (!sb.isEmpty())
@@ -406,28 +517,60 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
       return amountValue * rate;
     }*/
     double result = super.getDealAmount(rate, buy);
-    if (getSafetyOrdersAmountAddedPercent() > 0.f) {
-      if (buy && hasOpenedLongPositions()) {//todo брать не последний, а максимальный
-        result = getLongPosition().getMaxOrder().getAmount() * (1.f + getSafetyOrdersAmountAddedPercent());
-      } else if (!buy && hasOpenedShortPositions()) {
-        result = getShortPosition().getMaxOrder().getAmount() * (1.f + getSafetyOrdersAmountAddedPercent());
+    if (getSafetyOrdersAmountAddedPercent() > 0.f || getSafetyOrdersAdditionFactor() != null) {
+      // увеличиваем размер только для страховочных ордеров (когда позиция в убытке)
+      if (buy && hasOpenedLongPositions() && getCurrentLongProfitability(rate) < 0f) {
+        float safetyOrderAmountMultiplicator = evaluateSafetyOrderAmountFactor(getLongPosition(), rate);
+        result = getLongPosition().getFirstOrder().getAmount() * safetyOrderAmountMultiplicator;
+      } else if (!buy && hasOpenedShortPositions() && getCurrentShortProfitability(rate) < 0f) {
+        float safetyOrderAmountMultiplicator = evaluateSafetyOrderAmountFactor(getShortPosition(), rate);
+        result = getShortPosition().getFirstOrder().getAmount() * safetyOrderAmountMultiplicator;
       }
     }
-    float maxDealAmount = getDealMarginLimit();
+    float maxDealAmount = getDealMarginLimit() * getLeverage();
     if (result * rate > maxDealAmount) {
-      getLogger().info(this + ". User's plan doesn't allow so big deals - " + (result * rate) + " " + quotedCurrency);
+      notifyAboutDealMarginLimitReaching(rate, result);
       return maxDealAmount / rate;
     }
     return result;
   }
 
+  private float evaluateSafetyOrderAmountFactor(AbstractPositionContainer position, float rate) {
+    if (getSafetyOrdersAdditionFactor() != null) {
+      OrderInfoObject o = position.getFirstOrder();
+      float orderPrice = o.getPrice();
+      if (Consts.BUY.equals(position.getSide())) {
+        float diff = (orderPrice - rate) / orderPrice;
+        if (diff > 0)
+          return 1 + diff * getSafetyOrdersAdditionFactor();
+        return 1f;
+      } else if (Consts.SELL.equals(position.getSide())) {
+        float diff = (rate - orderPrice) / orderPrice;
+        if (diff > 0)
+          return 1 + diff * getSafetyOrdersAdditionFactor();
+        return 1f;
+      }
+    }
+    return (float) Math.pow(1.0 + getSafetyOrdersAmountAddedPercent(), position.getOrders().size());
+  }
+
   private float getDealMarginLimit() {
+    if (dealMarginLimit != null) {
+      if (dealMarginLimit > 1f)
+        return dealMarginLimit;
+      if (dealMarginLimit > 0f)
+        return Math.max(dealMarginLimit * quotedCurrencyAmount, 200f);//todo depends on amountDeterminant?
+    }
     AppUser user = findOwnerUser();
     if (user != null && "admin".equals(user.getUserName()))
     /*if (getAuthenticator() != null &&
         "Binance API".equalsIgnoreCase(getAuthenticator().getName()))*/
-      return 500f;
-    return 250f;//todo или снизить до 100, но делить на leverage?
+      return 200f;
+    return 100f;
+  }
+
+  protected void notifyAboutDealMarginLimitReaching(float rate, double result) {
+    getLogger().info("{}. User's plan doesn't allow so big deals - {} {}", this, result * rate, quotedCurrency);
   }
 
   /**
@@ -505,6 +648,9 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
       case "safetyOrdersAmountAddedPercent" -> {
         return setSafetyOrdersAmountAddedPercent(Float.parseFloat(value));
       }
+      case "safetyOrdersAdditionFactor" -> {
+        return setSafetyOrdersAdditionFactor(Float.parseFloat(value));
+      }
       case "maxSafetyOrdersLimit" -> {
         return setMaxSafetyOrdersLimit(Integer.parseInt(value));
       }
@@ -551,8 +697,20 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         else
           return "Unsuccessful closing";
       }
+      case "closeLongPartially" -> {//todo после реализовать через REST
+        if (closeBuyPartially(getManualPartialCloseDealInfo()))
+          return "Successfully closed";
+        else
+          return "Unsuccessful closing";
+      }
       case "closeShortPosition" -> {//todo после реализовать через REST
         if (closeSell(getManualCloseDealInfo()))
+          return "Successfully closed";
+        else
+          return "Unsuccessful closing";
+      }
+      case "closeShortPartially" -> {//todo после реализовать через REST
+        if (closeSellPartially(getManualPartialCloseDealInfo()))
           return "Successfully closed";
         else
           return "Unsuccessful closing";
@@ -672,6 +830,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         getLongPosition().incrementSafetyOrdersTriggered();
       }
       checkOpenedPosition(getLongPosition(), null);
+      //todo сразу заводить в БД
       return true;
     } catch (Exception e) {
       getLogger().warn("Error occurred while querying order with id " + orderId, e);
@@ -707,6 +866,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         getShortPosition().incrementSafetyOrdersTriggered();
       }
       checkOpenedPosition(getShortPosition(), null);
+      //todo сразу заводить в БД
       return true;
     } catch (Exception e) {
       getLogger().warn("Error occurred while querying order with id " + orderId, e);
@@ -718,6 +878,9 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
 
   @Override
   public String canBuy(float desiredRate) {
+    String result = super.canBuy(desiredRate);
+    if (result != null)
+      return result;
     if (!supportsHedgeMode() && hasOpenedShortPositions())
       return "Cant' open long position while short one exists";
     if (!canTrade())
@@ -725,22 +888,30 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     if (getLongPosition() != null) {
       if (getLongPosition().getOrders().size() >= getMaxSafetyOrdersLimit() + 1)
         return "Can't open any more buy orders";
-      if (!allowPositionIncreasing && orderIsBetterThan(true, desiredRate, getBestBuyOrder()))
+      OrderInfoObject bestBuyOrder = getBestBuyOrder();
+      if (!allowPositionIncreasing && orderIsBetterThan(true, desiredRate, bestBuyOrder))
         return "Better BUY order exists";
-      if (safetyOrdersMinimalDistancePercent > 0.f || safetyOrdersMinimalDistanceFactor != null) {
-        float minimalDistance = getSafetyOrdersMinimalDistance();
-        getLogger().trace("Current minimal SOD = " + String.format(Locale.ROOT, "%.5f", minimalDistance));
+      //todo refactor block
+      Float minimalDistance = getSafetyOrdersMinimalDistance(getLongPosition().getOrders().size());
+      if (minimalDistance != null) {
+        getLogger().trace("Current minimal SOD = {}", minimalDistance);
         for (OrderInfoObject o : getLongPosition().getOrders()) {
           if (closeOrderExists(desiredRate, o, minimalDistance))
             return "New BUY order is too close to opened ones";
         }
       }
+      if (bestBuyOrder.getPrice() < desiredRate && getLongPosition().getAvgPrice().floatValue() > desiredRate) {
+        return "New BUY order is excessive";
+      }
     }
-    return super.canBuy(desiredRate);
+    return result;
   }
 
   @Override
   public String canSell(float desiredRate) {
+    String result = super.canSell(desiredRate);
+    if (result != null)
+      return result;
     if (!supportsHedgeMode() && hasOpenedLongPositions())
       return "Cant' open short position while long one exists";
     if (!canTrade())
@@ -748,18 +919,23 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     if (getShortPosition() != null) {
       if (getShortPosition().getOrders().size() >= getMaxSafetyOrdersLimit() + 1)
         return "Can't open any more sell orders";
-      if (!allowPositionIncreasing && orderIsBetterThan(false, desiredRate, getBestSellOrder()))
+      OrderInfoObject bestSellOrder = getBestSellOrder();
+      if (!allowPositionIncreasing && orderIsBetterThan(false, desiredRate, bestSellOrder))
         return "Better SELL order exists";
-      if (safetyOrdersMinimalDistancePercent > 0.f || safetyOrdersMinimalDistanceFactor != null) {
+      Float minimalDistance = getSafetyOrdersMinimalDistance(getShortPosition().getOrders().size());
+      if (minimalDistance != null) {
+        //todo refactor block
         for (OrderInfoObject o : getShortPosition().getOrders()) {
-          float minimalDistance = getSafetyOrdersMinimalDistance();
-          getLogger().trace("Current minimal SOD = " + String.format(Locale.ROOT, "%.5f", minimalDistance));
+          getLogger().trace("Current minimal SOD = {}", minimalDistance);
           if (closeOrderExists(desiredRate, o, minimalDistance))
             return "New SELL order is too close to opened ones";
         }
       }
+      if (bestSellOrder.getPrice() > desiredRate && getShortPosition().getAvgPrice().floatValue() < desiredRate) {
+        return "New SELL order is excessive";
+      }
     }
-    return super.canSell(desiredRate);
+    return result;
   }
 
   public String setLeverage(int leverage) {
@@ -775,7 +951,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     /*if (leverage == null)
       leverage = getOrdersProcessor().getLeverage(getSignedClient(), getSymbol());*/
     if (leverage == null) {
-      getLogger().warn(this + ". Leverage is not set. Using default value - " + DEFAULT_LEVERAGE_VALUE);
+      getLogger().warn("{}. Leverage is not set. Using default value - " + DEFAULT_LEVERAGE_VALUE, this);
       return DEFAULT_LEVERAGE_VALUE;
     }
     return leverage;
@@ -793,7 +969,13 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
 
   private DealInfo getManualCloseDealInfo() {
     DealInfo dealInfo = new DealInfo(0.f, (Float) null, null);
-    dealInfo.addParameter(DealInfo.PARAM_STRATEGY, "manual");
+    dealInfo.addParameter(AbstractTrader.DealInfo.PARAM_STRATEGY, "manual");
+    return dealInfo;
+  }
+
+  private DealInfo getManualPartialCloseDealInfo() {
+    DealInfo dealInfo = getManualCloseDealInfo();
+    dealInfo.addParameter(DealInfo.PARAM_ORDERS_COUNT, 1);//todo а может лучше через position_weight?
     return dealInfo;
   }
 
@@ -801,8 +983,14 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     return 20;
   }*/
 
-  //todo важный коэффициент, сделать настраиваемым
+
+  /**
+   * Коэффициент коррекции тейк-профита при открытии safety-ордера
+   * Ближе к 0 - меньше риска (выйти из позиции хоть с каким-то профитом)
+   * Ближе к 1 - больше риска (профит увеличивается соответственно размеру позиции)
+   */
   private static float getSafetyOrdersTPCorrectionFactor() {
+    //todo важный коэффициент, сделать настраиваемым
     return 0.5f;
   }
 
@@ -848,10 +1036,6 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     return null;
   }
 
-  public float getSafetyOrdersAmountAddedPercent() {
-    return safetyOrdersAmountAddedPercent;
-  }
-
   public String setSafetyOrdersAmountAddedPercent(float value) {
     if (!Objects.equals(safetyOrdersAmountAddedPercent, value / 100.f)) {
       this.safetyOrdersAmountAddedPercent = value / 100.f;
@@ -860,14 +1044,18 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     return null;
   }
 
-  public int getMaxSafetyOrdersLimit() {
-    return maxSafetyOrdersLimit;
+  public String setSafetyOrdersAdditionFactor(float value) {
+    if (!Objects.equals(safetyOrdersAdditionFactor, value)) {
+      this.safetyOrdersAdditionFactor = value;
+      return String.format("New safetyOrdersAdditionFactor = %s", value);
+    }
+    return null;
   }
 
   public String setMaxSafetyOrdersLimit(int value) {
     if (!Objects.equals(maxSafetyOrdersLimit, value)) {
       this.maxSafetyOrdersLimit = value;
-      return String.format("New maxSafetyOrdersLimit = %s%%", value);
+      return String.format("New maxSafetyOrdersLimit = %s", value);
     }
     return null;
   }
@@ -919,9 +1107,9 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     return Math.abs(oPrice - rate) / oPrice < minimalDistance;
   }
 
-  private float getSafetyOrdersMinimalDistance() {
+  private Float getSafetyOrdersMinimalDistance(int existingOrdersCount) {
     if (safetyOrdersMinimalDistanceFactor != null && lastAppc > 0)
-      return safetyOrdersMinimalDistanceFactor * lastAppc;
+      return (safetyOrdersMinimalDistanceFactor + existingOrdersCount - 1) * lastAppc;
     return safetyOrdersMinimalDistancePercent;
   }
 
@@ -990,6 +1178,18 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
   }
 
   @Override
+  public float getSummaryProfit(float rate) {
+    float profit = 0.f;
+    if (hasOpenedLongPositions()) {
+      profit += getLongPosition().getExpectedProfit(rate);
+    }
+    if (hasOpenedShortPositions()) {
+      profit += getShortPosition().getExpectedProfit(rate);
+    }
+    return profit;
+  }
+
+  @Override
   public DealInfo getOpenLongPositionInfo() {
     return prepareOpenPositionInfo(getLongPosition());
   }
@@ -1015,6 +1215,10 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     DealInfo result = new DealInfo(position.getPositionInfo().getAveragePrice(),
         position.getStopLossOrder() == null ? null :position.getStopLossOrder().getPrice(),
         position.getTakeProfitOrder() == null ? null : position.getTakeProfitOrder().getPrice());
+    result.addParameter(DealInfo.PARAM_POSITION_WEIGHT, position.getPositionWeight());
+    result.addParameter(DealInfo.PARAM_ORDERS_COUNT, position.getOrders().size());
+    if (position.getLastOrder() != null)
+      result.addParameter(DealInfo.PARAM_LAST_ORDER_TIME, position.getLastOrder().getOrderTimestamp().getTime());
     if (position.getPositionInfo().getOpenTimestamp() != null)
       result.addParameter(DealInfo.PARAM_POSITION_TIME, position.getPositionInfo().getOpenTimestamp().getTime());
     return result;
@@ -1026,7 +1230,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     return dealInfo;
   }
 
-  protected String getSymbol() {//todo кешировать, всё равно не меняется
+  public String getSymbol() {//todo кешировать, всё равно не меняется
     return TradeUtils.getPair(baseCurrency, quotedCurrency);
   }
 
@@ -1070,8 +1274,13 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
 
   protected abstract AbstractOrdersProcessor getOrdersProcessor();
 
+  /**
+   *
+   * @param lastRate - current rate
+   * @return true if trader has a position
+   */
   @Override
-  public boolean checkOpenedPositions(AbstractRate<?> lastRate) {
+  public boolean checkOpenedPositions(AbstractRate<? extends Number> lastRate) {
     //todo трейлинг переходит на FILLED, когда открывается по факту,
     // и меняет тип на MARKET, origType остаётся TRAILING_STOP_MARKET, updateTime обновляется
     try {
@@ -1080,13 +1289,14 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
           longPosition = null;
         }
       }
-    } catch (SocketException e) {
+    } catch (SocketException | UnknownHostException e) {
       LoggingUtils.logError(getLogger(), e, "Temporary error while processing BUY position of " + getName());
-    } catch (Exception e) {
-      PositionInfoObject position = longPosition.getPositionInfo();
+    } catch (Exception e) {//todo сделать счётчик ошибок и удалять по истечении?
+      /*PositionInfoObject position = longPosition.getPositionInfo();
       position.setStatus(PositionInfoObject.PositionStatus.ERROR.name());
+      savePositionPackState(longPosition);
       notifyUser(preparePositionErrorMessage(position.getDirection(), position.getPositionId()));
-      longPosition = null;// чтобы не возникала ошибка при каждом запуске
+      longPosition = null;*/// чтобы не возникала ошибка при каждом запуске
       LoggingUtils.logError(getLogger(), e, "Processing BUY orders error " + getName());
     }
     try {
@@ -1095,13 +1305,14 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
           shortPosition = null;
         }
       }
-    } catch (SocketException e) {
+    } catch (SocketException | UnknownHostException e) {
       LoggingUtils.logError(getLogger(), e, "Temporary error while processing SELL position of " + getName());
-    } catch (Exception e) {
-      PositionInfoObject position = shortPosition.getPositionInfo();
+    } catch (Exception e) {//todo сделать счётчик ошибок и удалять по истечении?
+      /*PositionInfoObject position = shortPosition.getPositionInfo();
       position.setStatus(PositionInfoObject.PositionStatus.ERROR.name());
+      savePositionPackState(shortPosition);
       notifyUser(preparePositionErrorMessage(position.getDirection(), position.getPositionId()));
-      shortPosition = null;// чтобы не возникала ошибка при каждом запуске
+      shortPosition = null;*/// чтобы не возникала ошибка при каждом запуске
       LoggingUtils.logError(getLogger(), e, "Processing SELL orders error " + getName());
     }
     return hasOpenedShortPositions() || hasOpenedLongPositions();
@@ -1114,10 +1325,10 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
    * @param lastRate - последняя свеча
    * @return true, если пакет завершён и его можно удалять, false - иначе
    */
-  //TODO научиться пользоваться UserDataStream
+  //TODO начать использовать UserDataStream
   //TODO сделать что-то с этой неочевидной логикой возврата boolean и реакцией на возвр. значение
   //TODO оптимизировать сохранение состояния в БД, сейчас повсюду вызовы DatabaseInteractor.updateFinishedDeal
-  protected boolean checkOpenedPosition(@NotNull AbstractPositionContainer posInfo, @Nullable AbstractRate<?> lastRate)
+  protected boolean checkOpenedPosition(@NotNull AbstractPositionContainer posInfo, @Nullable AbstractRate<? extends Number> lastRate)
     throws Exception {
     boolean success = posInfo.update(getSignedClient()) > 0;
     if (success) {
@@ -1130,12 +1341,11 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
           if (cancelled > 0) {//todo убедиться, что основной отменился, а не только стопы
             //todo добавить метод isCancelled в контейнере позиции, который будет проверять статус вложенных ордеров
             // если он вернёт false (значит какой-то из ордеров уже исполнен), закрывать позицию вместо отмены ордера
+            //TODO если цена не ушла далеко (< appc), открывать рыночный ордер вместо лимитного
             cancelPosition(posInfo, checkTime, "unfired");
-            getLogger().info(String.format("%s order on %s is not filled and cancelled",
-                position.getDirection(), position.getSymbol()));
+            getLogger().info("{} order on {} is not filled and cancelled", position.getDirection(), position.getSymbol());
             if (cancelled < 3)
-              getLogger().info(
-                  "Some of the additional orders could be left uncanceled, cancelled " + cancelled + " order(s)");
+              getLogger().info("Some of the additional orders could be left uncanceled, cancelled {} order(s)", cancelled);
             notifyUser(prepareExpiredOrderCancelledMessage(position.getDirection(), position.getPositionId()));
             return true;
           }
@@ -1146,9 +1356,9 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
         BigDecimal avgPrice = posInfo.getAvgPrice();
         if (stopLossOrder != null && OrderInfoObject.OrderStatus.FILLED.equals(stopLossOrder.getStatus())) {
           float stopPrice = stopLossOrder.getAvgPrice().floatValue();
-          getLogger().debug(String.format("%s position on %s closed by stop-loss at %s",
-              position.getDirection(), position.getSymbol(), stopPrice));
-          finishPosition(posInfo, stopLossOrder.getOrderTimestamp().getTime(), STOP_LOSS_PARAM);
+          getLogger().debug("{} position on {} closed by stop-loss at {}", position.getDirection(), position.getSymbol(), stopPrice);
+          long closeTime = stopLossOrder.getOrderTimestamp().getTime();
+          finishPosition(posInfo, closeTime, STOP_LOSS_PARAM);
           BigDecimal executedAmount = posInfo.getExecutedAmount();//вычисляем до отмены страховочных
           float profit = evaluateProfit(avgPrice.floatValue(), stopPrice, executedAmount, position.getDirection());
           LoggingUtils.logDealCloseInfo(this.toString(),
@@ -1157,16 +1367,15 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
               executedAmount, position.getDirection(), profit,
               posInfo.getPositionInfo().getComment(), BinanceFuturesTrader.LOGGER);
           accountProfit(profit, posInfo);
-          notifyUser(prepareDealClosedNotificationMessage(position.getDirection(), stopPrice, profit, STOP_LOSS_PARAM));
+          notifyUser(prepareDealClosedNotificationMessage(position.getDirection(), stopPrice, closeTime, profit, STOP_LOSS_PARAM));
           if (!posInfo.cancelSafetyOrders(getSignedClient()))
-            getLogger().warn(String.format("Unsuccessful cancelling of safety orders for position %s",
-                position.getPositionId()));
+            getLogger().warn("Unsuccessful cancelling of safety orders for position {}", position.getPositionId());
           return true;
         } else if (takeProfitOrder != null && OrderInfoObject.OrderStatus.FILLED.equals(takeProfitOrder.getStatus())) {
           float stopPrice = takeProfitOrder.getAvgPrice().floatValue();
-          getLogger().debug(String.format("%s position on %s closed by take-profit at %s",
-              position.getDirection(), position.getSymbol(), stopPrice));
-          finishPosition(posInfo, takeProfitOrder.getOrderTimestamp().getTime(), TAKE_PROFIT_PARAM);
+          getLogger().debug("{} position on {} closed by take-profit at {}", position.getDirection(), position.getSymbol(), stopPrice);
+          long closeTime = takeProfitOrder.getOrderTimestamp().getTime();
+          finishPosition(posInfo, closeTime, TAKE_PROFIT_PARAM);
           BigDecimal executedAmount = posInfo.getExecutedAmount();//вычисляем до отмены страховочных
           float profit = evaluateProfit(avgPrice.floatValue(), stopPrice, executedAmount, position.getDirection());
           LoggingUtils.logDealCloseInfo(this.toString(),
@@ -1175,25 +1384,23 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
               executedAmount, position.getDirection(), profit,
               posInfo.getPositionInfo().getComment(), BinanceFuturesTrader.LOGGER);
           accountProfit(profit, posInfo);
-          notifyUser(prepareDealClosedNotificationMessage(position.getDirection(), stopPrice, profit, TAKE_PROFIT_PARAM));
+          notifyUser(prepareDealClosedNotificationMessage(position.getDirection(), stopPrice, closeTime, profit, TAKE_PROFIT_PARAM));
           if (!posInfo.cancelSafetyOrders(getSignedClient()))
-            getLogger().warn(String.format("Unsuccessful cancelling of safety orders for position %s",
-                position.getPositionId()));
+            getLogger().warn("Unsuccessful cancelling of safety orders for position {}", position.getPositionId());
           return true;
         } else if (posInfo.getStopLossOrder() == null && posInfo.getTakeProfitOrder() == null) {
-          getLogger().warn(String.format("Order container for base %s has no SL nor TP order", position.getPositionId()));
+          getLogger().warn("Order container for base {} has no SL nor TP order", position.getPositionId());
         } else if (posInfo.stopOrdersNotActual()) {
-          getLogger().info(String.format("Order container for base %s is not actual anymore", position.getPositionId()));
+          getLogger().info("Order container for base {} is not actual anymore", position.getPositionId());
           if (!posInfo.cancelSafetyOrders(getSignedClient()))
-            getLogger().warn(String.format("Unsuccessful cancelling of safety orders for position %s",
-                position.getPositionId()));
+            getLogger().warn("Unsuccessful cancelling of safety orders for position {}", position.getPositionId());
           finishPosition(posInfo, checkTime, "not-actual");
           notifyUser(prepareNotActualStopsMessage(position.getDirection(), posInfo.getPositionInfo().getPositionId()));
           return true;
         }
         //todo пока из третьего бота убраны страховочные, ветка неактуальна
         if (posInfo.newSafetyOrdersFilled(true)) {
-          getLogger().debug(String.format("Some safety orders is filled. Average position price - %s", avgPrice));
+          getLogger().debug("Some safety orders is filled. Average position price - {}", avgPrice);
           /*BigDecimal tpDiff = takeProfitOrder.getStopPrice().subtract(avgPrice);
           //Новый TP будет уже ближе к средней цене (можно поиграться с коэффициентом, 0.75->0.8->0.85)
           BigDecimal tpAbs = avgPrice.add(tpDiff.multiply(BigDecimal.valueOf(0.5f), MathContext.DECIMAL32));
@@ -1207,7 +1414,7 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     } else {
       notifyUser(String.format("%s. Unsuccessful open orders status update", this));
     }
-    getLogger().info(getName() + ": " + posInfo.toString(lastRate == null ? null : (float) lastRate.getValue()));
+    getLogger().info("{}: {}", getName(), posInfo.toString(lastRate == null ? null : (float) lastRate.getValue()));
     return false;
   }
 
@@ -1231,8 +1438,9 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     String pair = getSymbol();
     /*longPosition = createAndLoadPositionContainer(DatabaseInteractor.loadOpenPosition(getId(), Consts.BUY), pair);
     shortPosition = createAndLoadPositionContainer(DatabaseInteractor.loadOpenPosition(getId(), Consts.SELL), pair);
+    //todo нужно ли здесь выводить в лог? Всё равно выведется потом при вызове checkOpenedPosition
     if (hasOpenedLongPositions())
-      getLogger().info(getName() + ": " + getLongPosition().toString());
+      getLogger().info("{}: {}", getName(), getLongPosition().toString());
     if (hasOpenedShortPositions())
       getLogger().info(getName() + ": " + getShortPosition().toString());*/
   }
@@ -1245,6 +1453,8 @@ public abstract class CommonFuturesTrader extends AbstractTrader {
     getLogger().info(String.format("Trader %s. Balances: %s/%s %s, %s/%s %s", getName(),
         baseCurrencyAmount, baseCurrencyTotalAmount, baseCurrency,
         quotedCurrencyAmount, quotedCurrencyTotalAmount, quotedCurrency));
+    if (storeOrdersInDatabase())
+      loadOpenedOrders();
     if (attachToExistingPositions())
       loadExistingPositions();
   }

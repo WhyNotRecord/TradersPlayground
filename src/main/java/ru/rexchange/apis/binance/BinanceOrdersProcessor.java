@@ -4,6 +4,7 @@ import binance.futures.enums.*;
 import binance.futures.model.Candle;
 import binance.futures.model.ExchangeInfoEntry;
 import binance.futures.model.Order;
+import lombok.Setter;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +25,7 @@ import ru.rexchange.trading.trader.futures.FuturesPositionContainer;
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.SocketException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,6 +37,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
   protected static Logger LOGGER = LoggerFactory.getLogger(BinanceOrdersProcessor.class);
   private static BinanceOrdersProcessor instance = null;
   private static final long OPEN_ORDERS_CACHE_LIVE_TIME = 60 * 1000L;
+  @Setter
   private boolean testOrders = false;
   /*public static final List<String> NOT_EXECUTED_ORDER_STATUSES = Arrays.asList(OrderStatus.NEW.name(),
       OrderStatus.CANCELED.name(), OrderStatus.EXPIRED.name());*/
@@ -50,14 +53,10 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     return instance;
   }
 
-  public void setTestOrders(boolean value) {
-    testOrders = value;
-  }
-
   @Override
   public OrderInfoObject limitOrder(AbstractSignedClient aClient, float price, String pair,
                                     double amount, boolean buy, Integer leverage) throws UserException {
-    LOGGER.debug(String.format("Placing a %s limit order for %s", buy ? "buy" : "sell", pair));
+    LOGGER.debug("Placing a {} limit order for {}", buy ? "buy" : "sell", pair);
     BinanceSignedClient apiClient = (BinanceSignedClient) aClient;
     ExchangeInfoEntry symbolInfo = BinanceFuturesApiProvider.getSymbolInfo(pair);
     String convertedAmount = checkAndFitAmount(symbolInfo, price, amount);
@@ -67,11 +66,11 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
       Order order = buy ?
           openBuy(apiClient, true, pair, convertedAmount, priceStr) :
           openSell(apiClient, true, pair, convertedAmount, priceStr);
-      LOGGER.debug(String.format("Posted a limit %s order with id %s for %s %s by %s",
-          order.getSide(), order.getClientOrderId(), convertedAmount, pair, priceStr));
+      LOGGER.debug("Posted a limit {} order with id {} for {} {} by {}",
+          order.getSide(), order.getClientOrderId(), convertedAmount, pair, priceStr);
       return convertOrder(order, null);
     } catch (Exception e) {
-      LOGGER.error(String.format("Place %s order failed: %s %s", (buy ? "buy" : "sell"), convertedAmount, pair));
+      LOGGER.error("Place {} order failed: {} {}", (buy ? "buy" : "sell"), convertedAmount, pair);
       throw new SystemException(e);
     }
   }
@@ -141,7 +140,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
   @Override
   public AbstractPositionContainer placeOrder(AbstractSignedClient aClient, AbstractPositionContainer openPosition, boolean limit, float price, String pair, double amount, Integer leverage,
                                               boolean buy, @Nullable Float stopLoss, @Nullable Float takeProfit) throws UserException {
-    LOGGER.debug(String.format("Placing a %s limit order for %s", buy ? "buy" : "sell", pair));
+    LOGGER.debug("Placing a {} limit order for {}", buy ? "buy" : "sell", pair);
     BinanceSignedClient apiClient = (BinanceSignedClient) aClient;
     if (leverage != null && !testOrders) {
         setLeverageSafe(apiClient, pair, leverage);
@@ -155,10 +154,10 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
       Order order = buy ?
           openBuy(apiClient, limit, pair, convertedAmount, priceStr) :
           openSell(apiClient, limit, pair, convertedAmount, priceStr);
-      LOGGER.debug(String.format("Executed a %s order with id %s for %s %s by %s",
-              order.getSide(), order.getClientOrderId(), convertedAmount, pair, priceStr));
+      LOGGER.debug("Executed a {} order with id {} for {} {} by {}",
+          order.getSide(), order.getClientOrderId(), convertedAmount, pair, priceStr);
       if (!OrderStatus.FILLED.name().equals(order.getStatus())) {
-        LOGGER.info(String.format("Order is %s, not %s!", order.getStatus(), OrderStatus.FILLED.name()));
+        LOGGER.info("Order is {}, not {}!", order.getStatus(), OrderStatus.FILLED.name());
       }
       PositionContainer result;
 
@@ -169,8 +168,6 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
         openPosition.addOrder(convertOrder(order, openPosition.getPositionInfo().getPositionId()));
       }
       Order takeProfitOrder, stopLossOrder = null;
-      //TODO если это наращивание позиции, то TP и SL должны создаваться на весь размер позиции,
-      // а не только на размер последнего ордера!!!
       List<Order> orders = getOpenOrders(apiClient);
       if (stopLoss != null && !Float.isNaN(stopLoss)) {
         stopLossOrder = placeStopLoss(apiClient, orders, symbolInfo, result, stopLoss);
@@ -190,7 +187,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
 
       return result;
     } catch (Exception e) {
-      LOGGER.error(String.format("Place %s order failed: %s %s", (buy ? "buy" : "sell"), convertedAmount, pair));
+      LOGGER.error("Place {} order failed: {} {}", (buy ? "buy" : "sell"), convertedAmount, pair);
       throw new SystemException(e);
     }
   }
@@ -199,7 +196,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
   public AbstractPositionContainer placeMarketOrder(AbstractSignedClient aClient, AbstractPositionContainer openPosition,
                                                     String pair, double amount, Integer leverage,
                                                     boolean buy) throws UserException {
-    LOGGER.debug(String.format("Placing a %s limit order for %s", buy ? "buy" : "sell", pair));
+    LOGGER.debug("Placing a {} limit order for {}", buy ? "buy" : "sell", pair);
     BinanceSignedClient apiClient = (BinanceSignedClient) aClient;
     if (leverage != null && !testOrders) {
         setLeverageSafe(apiClient, pair, leverage);
@@ -215,10 +212,10 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
       Order order = buy ?
           openBuy(apiClient, false, pair, convertedAmount, null) :
           openSell(apiClient, false, pair, convertedAmount, null);
-      LOGGER.debug(String.format("Executed a %s order with id %s for %s %s by %s",
-              order.getSide(), order.getClientOrderId(), convertedAmount, pair, lastPrice));
+      LOGGER.debug("Executed a {} order with id {} for {} {} by {}",
+          order.getSide(), order.getClientOrderId(), convertedAmount, pair, lastPrice);
       if (!OrderStatus.FILLED.name().equals(order.getStatus())) {
-        LOGGER.info(String.format("Order is %s, not %s!", order.getStatus(), OrderStatus.FILLED.name()));
+        LOGGER.info("Order is {}, not {}!", order.getStatus(), OrderStatus.FILLED.name());
       }
       if (openPosition == null)
         return createPositionContainer(convertOrder(order, null));
@@ -227,7 +224,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
         return openPosition;
       }
     } catch (Exception e) {
-      LOGGER.error(String.format("Place %s order on %s failed", (buy ? "buy" : "sell"), pair));
+      LOGGER.error("Place {} order on {} failed", (buy ? "buy" : "sell"), pair);
       throw new SystemException(e);
     }
   }
@@ -259,14 +256,14 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
         }
 
         //Convert amount to an integer multiple of LOT_SIZE and convert to asset precision
-        LOGGER.trace(String.format("Converting from double trade amount %s to base asset precision %s LOT_SIZE - %s",
-            originalDecimal, precision, minQty));
+        LOGGER.trace("Converting from double trade amount {} to base asset precision {} LOT_SIZE - {}",
+            originalDecimal, precision, minQty);
         //TODO проверить эти формулы и упростить, если возможно
         convertedAmount = new BigDecimal(minQty).multiply(new BigDecimal(amount / minQtyDouble)).
             setScale(new BigDecimal(minQty).scale(), RoundingMode.HALF_DOWN).
             //может вставить E stripTrailingZeros().
             toString();
-        LOGGER.trace("Converted to " + convertedAmount);
+        LOGGER.trace("Converted to {}", convertedAmount);
 
         if (minNotational != null) {
           double notational = Double.parseDouble(convertedAmount) * price;
@@ -284,7 +281,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
 
   protected String checkAndFitPrice(ExchangeInfoEntry symbolInfo, float price, int shift) {
     String preparedPrice = String.valueOf(price);
-    LOGGER.trace("Preparing order price value: " + price);
+    LOGGER.trace("Preparing order price value: {}", price);
     if (symbolInfo != null) {
       List<Map<String, String>> filters = symbolInfo.getFilters();//TODO magic consts
       String tickSize = getFilterValue(filters, "PRICE_FILTER", "tickSize");
@@ -296,7 +293,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
       if (preparedPrice.length() > 7)
         preparedPrice = preparedPrice.substring(0, 7);
     }
-    LOGGER.trace("Fitted price value is " + preparedPrice);
+    LOGGER.trace("Fitted price value is {}", preparedPrice);
     return preparedPrice;
   }
 
@@ -321,7 +318,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
 
     protected String checkByRange(String minValue, String maxValue, float price, String symbol) {
     if (minValue == null || maxValue == null) {
-      LOGGER.warn(String.format("Can not check price value %s. No range provided", price));
+      LOGGER.warn("Can not check price value {}. No range provided", price);
       return String.valueOf(price);
     }
     Float fMin = Float.valueOf(minValue),
@@ -329,13 +326,11 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     if (price > fMin && price < fMax)
       return String.valueOf(price);
     if (price < fMin) {
-      LOGGER.warn(String.format("Order price is too small - %s. Returning minimum range value for %s: %s",
-          price, symbol, fMin));
+      LOGGER.warn("Order price is too small - {}. Returning minimum range value for {}: {}", price, symbol, fMin);
       return String.valueOf(fMin);
     }
     if (price > fMax) {
-      LOGGER.warn(String.format("Order price is too big - %s. Returning maximum range value for %s: %s",
-          price, symbol, fMax));
+      LOGGER.warn("Order price is too big - {}. Returning maximum range value for {}: {}", price, symbol, fMax);
       return String.valueOf(fMax);
     }
     return String.valueOf(price);
@@ -350,7 +345,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
   }
 
   public static String setLeverage(BinanceSignedClient apiClient, String pair, Integer leverage) throws Exception {
-    LOGGER.debug(String.format("Setting leverage for pair %s to %s", pair, leverage));
+    LOGGER.debug("Setting leverage for pair {} to {}", pair, leverage);
     return apiClient.setLeverage(pair, leverage);
   }
 
@@ -358,7 +353,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     try {
       return setLeverage(apiClient, pair, leverage);
     } catch (Exception e) {
-      LOGGER.error("Unsuccessful leverage change for pair " + pair, e);
+      LOGGER.error("Unsuccessful leverage change for pair {}", pair, e);
       return null;
     }
   }
@@ -422,7 +417,11 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     try {
       //Отменяем существующий take-profit при наличии
       if (checkForExistingTakeProfit(apiClient, orders, buy, positionInfo.getSymbol()) != null) {//todo unknown order sent
-        LOGGER.debug(String.format("Trying to recreate TP order with new price %s", takeProfitValue));
+        LOGGER.debug("Trying to recreate TP order with new price {}", takeProfitValue);
+      }
+      if (takeProfitValue == 0) {
+        LOGGER.info("TP price equals zero, leaving position without take-profit");
+        return null;
       }
       priceStr = checkAndFitPrice(symbolInfo, takeProfitValue, 0);
       Order order;
@@ -438,13 +437,13 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
             String.valueOf(positionInfo.getAmount()), null, null, null, priceStr,
             WorkingType.CONTRACT_PRICE, NewOrderRespType.RESULT, true);
       }
-      LOGGER.debug(String.format("Set a %s take profit order with id %s for base order %s",
-          order.getSide(), order.getClientOrderId(), positionInfo.getPositionId()));
+      LOGGER.debug("Set a {} take profit order with id {} for base order {}",
+          order.getSide(), order.getClientOrderId(), positionInfo.getPositionId());
       return order;
     } catch (Exception e) {
       //TODO e.getMessage().contains("is existing") - значит уже существует TP для позиции
-      LOGGER.error(String.format("Failed %s TP order for %s %s by %s",
-              positionInfo.getDirection(), positionInfo.getAmount(), positionInfo.getSymbol(), priceStr), e);
+      LOGGER.error("Failed {} TP order for {} {} by {}",
+          positionInfo.getDirection(), positionInfo.getAmount(), positionInfo.getSymbol(), priceStr, e);
       return null;
     }
   }
@@ -455,7 +454,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
         symbol, getClosingOrderSide(buy), getClosingPositionSide(buy), OrderType.TAKE_PROFIT_MARKET);
     if (existingTakeProfit != null) {
       float stopPrice = existingTakeProfit.getStopPrice().floatValue();
-      LOGGER.debug(String.format("Existing TP at %s found", stopPrice));
+      LOGGER.debug("Existing TP at {} found", stopPrice);
       if (cancelOrder(apiClient, existingTakeProfit) == null)
         throw new SystemException("Unsuccessful TP order cancellation " + existingTakeProfit.getClientOrderId());
       return stopPrice;
@@ -485,13 +484,13 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
             String.valueOf(positionInfo.getAmount()), null, null, null, priceStr,
             WorkingType.MARK_PRICE, NewOrderRespType.RESULT, true);
       }
-      LOGGER.debug(String.format("Set a %s stop loss order with id %s for base order %s",
-          order.getSide(), order.getClientOrderId(), positionInfo.getPositionId()));
+      LOGGER.debug("Set a {} stop loss order with id {} for base order {}",
+          order.getSide(), order.getClientOrderId(), positionInfo.getPositionId());
       return order;
     } catch (Exception e) {
       //TODO e.getMessage().contains("is existing") - значит уже существует SL для позиции
-      LOGGER.error(String.format("Failed %s SL order for %s %s by %s",
-          positionInfo.getDirection(), positionInfo.getAmount(), positionInfo.getSymbol(), priceStr), e);
+      LOGGER.error("Failed {} SL order for {} {} by {}",
+          positionInfo.getDirection(), positionInfo.getAmount(), positionInfo.getSymbol(), priceStr, e);
       return null;
     }
   }
@@ -502,7 +501,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
         symbol, getClosingOrderSide(buy), getClosingPositionSide(buy), OrderType.STOP_MARKET);
     if (existingStopLoss != null) {//логика корректировки стоп-лосса
       float stopPrice = existingStopLoss.getStopPrice().floatValue();
-      LOGGER.debug(String.format("Existing SL at %s found", stopPrice));
+      LOGGER.debug("Existing SL at {} found", stopPrice);
       if (cancelOrder(apiClient, existingStopLoss) == null)
         throw new SystemException("Unsuccessful SL order cancellation " + existingStopLoss.getClientOrderId());
       return stopPrice;
@@ -524,16 +523,16 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
       return null;
     }
     if (!OrderStatus.NEW.name().equals(order.getStatus())) {//TODO а что делать в противном случае?
-      LOGGER.warn(String.format("Order %s is %s, can not be canceled!", order.getClientOrderId(), order.getStatus()));
+      LOGGER.warn("Order {} is {}, can not be canceled!", order.getClientOrderId(), order.getStatus());
       if (OrderStatus.CANCELED.name().equals(order.getStatus()))
         return order;
       return null;
     }
-    LOGGER.debug(String.format("Cancelling %s order %s for %s by %s on %s",
-        order.getSide(), order.getClientOrderId(), order.getOrigQty(), order.getPrice(), order.getSymbol()));
+    LOGGER.debug("Cancelling {} order {} for {} by {} on {}",
+        order.getSide(), order.getClientOrderId(), order.getOrigQty(), order.getPrice(), order.getSymbol());
     if (testOrders) {
-      LOGGER.debug(String.format("Test order on %s cancelled: amount - %s price - %s",
-          order.getSymbol(), order.getOrigQty(), order.getPrice()));
+      LOGGER.debug("Test order on {} cancelled: amount - {} price - {}",
+          order.getSymbol(), order.getOrigQty(), order.getPrice());
       order.setStatus(OrderStatus.CANCELED.name());
       return order;
     }
@@ -542,8 +541,8 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
           ((BinanceSignedClient) apiClient).cancelOrder(order.getSymbol(), order.getOrderId(), order.getClientOrderId()),
           3, getDefaultAttemptPause());
     } catch (Exception e) {
-      LOGGER.error(String.format("Failed to cancel %s order %s for %s by %s on %s",
-          order.getSide(), order.getClientOrderId(), order.getOrigQty(), order.getPrice(), order.getSymbol()), e);
+      LOGGER.error("Failed to cancel {} order {} for {} by {} on {}",
+          order.getSide(), order.getClientOrderId(), order.getOrigQty(), order.getPrice(), order.getSymbol(), e);
       return null;
     }
   }
@@ -556,14 +555,14 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
       return false;
     }
     if (!OrderInfoObject.OrderStatus.NEW.equals(order.getStatus())) {//TODO а что делать в противном случае?
-      LOGGER.warn(String.format("Order %s is %s, can not be canceled!", order.getOrderId(), order.getStatus()));
+      LOGGER.warn("Order {} is {}, can not be canceled!", order.getOrderId(), order.getStatus());
       return OrderInfoObject.OrderStatus.CANCELED.equals(order.getStatus());
     }
-    LOGGER.debug(String.format("Cancelling %s order %s for %s by %s on %s",
-        order.getDirection(), order.getOrderId(), order.getAmount(), order.getPrice(), order.getSymbol()));
+    LOGGER.debug("Cancelling {} order {} for {} by {} on {}",
+        order.getDirection(), order.getOrderId(), order.getAmount(), order.getPrice(), order.getSymbol());
     if (testOrders) {
-      LOGGER.debug(String.format("Test order on %s cancelled: amount - %s price - %s",
-          order.getSymbol(), order.getAmount(), order.getPrice()));
+      LOGGER.debug("Test order on {} cancelled: amount - {} price - {}",
+          order.getSymbol(), order.getAmount(), order.getPrice());
       order.setStatus(OrderInfoObject.OrderStatus.CANCELED);
       return true;
     }
@@ -572,8 +571,8 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
           ((BinanceSignedClient) apiClient).cancelOrder(order.getSymbol(), null, order.getOrderId()) != null,
           3, getDefaultAttemptPause());
     } catch (Exception e) {
-      LOGGER.error(String.format("Failed to cancel %s order %s for %s by %s on %s",
-          order.getDirection(), order.getOrderId(), order.getAmount(), order.getPrice(), order.getSymbol()), e);
+      LOGGER.error("Failed to cancel {} order {} for {} by {} on {}",
+          order.getDirection(), order.getOrderId(), order.getAmount(), order.getPrice(), order.getSymbol(), e);
       return false;
     }
   }
@@ -591,7 +590,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
 
   //TODO проработать механизм update'а. Хреново, что он принимает ордер одного типа, а возвращает другого
 
-  protected Order updateOrder(BinanceSignedClient apiClient, OrderInfoObject order) {
+  protected Order updateOrder(BinanceSignedClient apiClient, OrderInfoObject order) throws SocketException {
     if (order == null) {
       LOGGER.error("Trying to update null order");
       return null;
@@ -599,8 +598,10 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     try {
       return Utils.executeInFewAttempts(() ->
           apiClient.queryOrder(order.getSymbol(), null, order.getOrderId()), 3, getDefaultAttemptPause());
+    } catch (SocketException e) {
+      throw e;
     } catch (Exception e) {
-      LOGGER.error(String.format("Update order %s failed", order.getOrderId()));
+      LOGGER.error("Update order {} failed", order.getOrderId());
       throw new SystemException(e);
     }
   }
@@ -630,8 +631,8 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     order.setStatus(orderStatus.name());
     order.setUpdateTime(DateUtils.currentTimeMillis());
     order.setClientOrderId(generateTestOrderId());
-    LOGGER.debug(String.format("Test order on %s created: amount - %s price - %s",
-        order.getSymbol(), order.getOrigQty(), order.getPrice()));
+    LOGGER.debug("Test order on {} created: amount - {} price - {}",
+        order.getSymbol(), order.getOrigQty(), order.getPrice());
     return order;
   }
 
@@ -660,7 +661,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     //todo кеширование должно быть разделено для разных клиентов if (openOrders == null || isOpenOrdersCacheExpired()) {
     openOrders = apiClient.getOpenOrders();
     openOrdersTs = DateUtils.currentTimeMillis();
-    LOGGER.debug("Open orders loaded count - " + openOrders.size());
+    LOGGER.debug("Open orders loaded count - {}", openOrders.size());
     for (Order o : openOrders) {
       LOGGER.trace(o.toString());
     }
@@ -756,8 +757,8 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
             getPositionInfo().getSymbol(), getExecutedAmount(),
             Consts.BUY.equals(getPositionInfo().getDirection()));
       } catch (Exception e) {
-        LOGGER.error(String.format("Failed to close %s deal for %s %s by market",
-            getPositionInfo().getDirection(), getExecutedAmount(), getPositionInfo().getSymbol()), e);
+        LOGGER.error("Failed to close {} deal for {} {} by market",
+            getPositionInfo().getDirection(), getExecutedAmount(), getPositionInfo().getSymbol(), e);
         return null;
       }
       //TP и SL ордера отменяются автоматом
@@ -767,11 +768,30 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     }
 
     @Override
-    public int update(AbstractSignedClient apiAccess) {
+    public OrderInfoObject closePartially(AbstractSignedClient apiAccess, BigDecimal amount) {
+      if (!(apiAccess instanceof BinanceSignedClient)) {
+        LOGGER.warn("Expected API connector aren't provided");
+        return null;
+      }
+      Order result = null;
+      try {
+        result = getOrdersProcessor().closeDeal((BinanceSignedClient) apiAccess,
+            getPositionInfo().getSymbol(), amount,
+            Consts.BUY.equals(getPositionInfo().getDirection()));
+      } catch (Exception e) {
+        LOGGER.error("Failed to close {} deal partially for {} {} by market",
+            getPositionInfo().getDirection(), amount, getPositionInfo().getSymbol(), e);
+        return null;
+      }
+      return getOrdersProcessor().convertOrder(result, getPositionInfo().getPositionId());
+    }
+
+    @Override
+    public int update(AbstractSignedClient apiAccess) throws SocketException {
       int result = 0;
       if (!(apiAccess instanceof BinanceSignedClient))
         return result;
-      LOGGER.debug(String.format("Updating position container with id = %s", position.getPositionId()));
+      LOGGER.trace("Updating position container with id = {}", position.getPositionId());
       if (getStopLossOrder() != null) {
         Order slUpdated = getOrdersProcessor().updateOrder((BinanceSignedClient) apiAccess, getStopLossOrder());
         if (slUpdated != null) {
@@ -808,7 +828,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
         return result;
 
       if (position != null)
-        LOGGER.debug(String.format("Updating position container with id = %s", position.getPositionId()));
+        LOGGER.debug("Cancelling position container with id = {}", position.getPositionId());
       boolean slCancelled = getOrdersProcessor().cancelOrder(apiAccess, getStopLossOrder());
       if (slCancelled)
         result++;
@@ -845,10 +865,12 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     }
 
     @Override
-    public Object rearrangeTakeProfit(AbstractSignedClient apiAccess, @Nullable BigDecimal newTp) {
-      if (!(apiAccess instanceof BinanceSignedClient))
-        return null;
-      LOGGER.debug("rearrangeTakeProfit, new value = " + newTp);
+    public boolean rearrangeTakeProfit(AbstractSignedClient apiAccess, @Nullable BigDecimal newTp) {
+      if (!(apiAccess instanceof BinanceSignedClient)) {
+        LOGGER.warn("Can't rearrange take-profit: no valid client provided");
+        return false;
+      }
+      LOGGER.debug("rearrangeTakeProfit, new value = {}", newTp);
       /*if (newTp == null) {
         if (parameters.containsKey(PARAM_TAKE_PROFIT_PERCENT)) {
           Object tpPercent = parameters.get(PARAM_TAKE_PROFIT_PERCENT);
@@ -859,10 +881,10 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
         }
       }*/
       if (newTp == null) {
-        LOGGER.warn(String.format("Can't rearrange TP order %s: no value provided",
-            getTakeProfitOrder().getOrderId()));
-        return null;
+        LOGGER.warn("Can't rearrange TP order {}: no value provided", getTakeProfitOrder().getOrderId());
+        return false;
       }
+      boolean removeOnly = newTp.floatValue() == 0;
       //существующий TP отменится в placeTakeProfit
       /*if (getTakeProfitOrder() != null) {
         Order tp = getOrdersProcessor().cancelOrder((SignedClient) apiAccess, getTakeProfitOrder());
@@ -873,24 +895,24 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
         Order newTPOrder = getOrdersProcessor().placeTakeProfit((BinanceSignedClient) apiAccess,
             getOrdersProcessor().getOpenOrders((BinanceSignedClient) apiAccess),
             BinanceFuturesApiProvider.getSymbolInfo(position.getSymbol()), this, newTp.floatValue());
-        if (newTPOrder == null)
+        if (!removeOnly && newTPOrder == null)
           throw new NullPointerException("New TP order is null");
         if (takeProfitOrder != null) {
           try {
             this.outdatedOrders.add(getOrdersProcessor().convertOrder(
                 getOrdersProcessor().updateOrder((BinanceSignedClient) apiAccess, takeProfitOrder), getPositionInfo().getPositionId()));
           } catch (Exception e) {
-            LOGGER.warn(String.format("Updating outdated TP order with id = %s failed", takeProfitOrder.getOrderId()));
+            LOGGER.warn("Updating outdated TP order with id = {} failed", takeProfitOrder.getOrderId());
           }
         }
-        this.takeProfitOrder = getOrdersProcessor().convertOrder(newTPOrder, getPositionInfo().getPositionId());
+        this.takeProfitOrder = removeOnly ? null : getOrdersProcessor().convertOrder(newTPOrder, getPositionInfo().getPositionId());
         /*LOGGER.debug(String.format("Set a %s take profit order with id %s for base order %s",
             newTPOrder.getSide(), newTPOrder.getClientOrderId(), baseOrder.getClientOrderId()));*/
-        return newTPOrder;
+        return true;
       } catch (Exception e) {
-        LOGGER.error(String.format("Failed %s TP order for %s %s by %s",
-            position.getDirection(), position.getAmount(), position.getSymbol(), newTp), e);
-        return null;
+        LOGGER.error("Failed {} TP order for {} {} by {}",
+            position.getDirection(), position.getAmount(), position.getSymbol(), newTp, e);
+        return false;
       }
     }
 
@@ -898,10 +920,9 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
     public Object rearrangeStopLoss(AbstractSignedClient apiAccess, BigDecimal newSl) {
       if (!(apiAccess instanceof BinanceSignedClient))
         return null;
-      LOGGER.debug("rearrangeStopLoss, new value = " + newSl);
+      LOGGER.debug("rearrangeStopLoss, new value = {}", newSl);
       if (newSl == null) {
-        LOGGER.warn(String.format("Can't rearrange SL order %s: no value provided",
-            getStopLossOrder().getOrderId()));
+        LOGGER.warn("Can't rearrange SL order {}: no value provided", getStopLossOrder().getOrderId());
         return null;
       }
       //существующий SL отменится в placeStopLoss
@@ -921,7 +942,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
             this.outdatedOrders.add(getOrdersProcessor().convertOrder(
                 getOrdersProcessor().updateOrder((BinanceSignedClient) apiAccess, stopLossOrder), getPositionInfo().getPositionId()));
           } catch (Exception e) {
-            LOGGER.warn(String.format("Updating outdated SL order with id = %s failed", stopLossOrder.getOrderId()));
+            LOGGER.warn("Updating outdated SL order with id = {} failed", stopLossOrder.getOrderId());
           }
         }
         this.stopLossOrder = getOrdersProcessor().convertOrder(newSlOrder, getPositionInfo().getPositionId());
@@ -929,8 +950,8 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor {
             newSlOrder.getSide(), newSlOrder.getClientOrderId(), baseOrder.getClientOrderId()));*/
         return newSlOrder;
       } catch (Exception e) {
-        LOGGER.error(String.format("Failed %s SL order for %s %s by %s",
-            position.getDirection(), position.getAmount(), position.getSymbol(), newSl), e);
+        LOGGER.error("Failed {} SL order for {} {} by {}",
+            position.getDirection(), position.getAmount(), position.getSymbol(), newSl, e);
         return null;
       }
     }

@@ -3,6 +3,7 @@ package ru.rexchange.trading.trader.futures;
 import binance.futures.enums.PositionMode;
 import binance.futures.model.AccountBalance;
 import binance.futures.model.Order;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.rexchange.apis.binance.BinanceFuturesApiProvider;
@@ -198,8 +199,10 @@ public class BinanceFuturesTrader extends CommonFuturesTrader {
   protected String findLastOpenedOrder(boolean buy, AbstractOrdersProcessor processor) {
     try {
       List<Order> orders = getSignedClient().getFilledOrders(getSymbol());
+      orders.sort((o1, o2) -> -o1.getUpdateTime().compareTo(o2.getUpdateTime()));
       String orderDirection = buy ? Consts.BUY : Consts.SELL;
       for (Order o : orders) {
+        LOGGER.trace(o.toString());
         if (orderDirection.equals(o.getSide().toUpperCase())/*todo check type=MARKET/LIMIT*/)
           return o.getClientOrderId();
       }
@@ -213,12 +216,12 @@ public class BinanceFuturesTrader extends CommonFuturesTrader {
   @Override
   public void setAuthInfo(TraderAuthenticator authenticator) {
     super.setAuthInfo(authenticator);
-    if (!this.getAuthenticator().equals(authenticator)) {
+    if (!this.getAuthenticator().equals(authenticator)) {//todo никогда не вызывается?
       try {
         BinanceSignedClient apiClient = getSignedClient();
         if (!PositionMode.HEDGE.equals(apiClient.getPositionMode())) {
           apiClient.setPositionMode(true);
-          getLogger().info(String.format("Hedge mode for trader %s set successfully", this));
+          getLogger().info("Hedge mode for trader {} set successfully", this);
         }
         if (leverage != null && baseCurrency != null)
           BinanceOrdersProcessor.setLeverage(apiClient, getSymbol(), leverage);
@@ -228,12 +231,13 @@ public class BinanceFuturesTrader extends CommonFuturesTrader {
         if (e.getMessage().contains("No need to change position side")) {
           getLogger().info(e.getMessage());
         } else {
-          getLogger().error(String.format("%s. Unsuccessful change to hedge position mode", this), e);
+          getLogger().error("{}. Unsuccessful change to hedge position mode", this, e);
         }
       }
     }
   }
 
+  @NotNull
   protected AbstractPositionContainer createCustomPositionContainer(PositionInfo positionInfo) {
     return new BinanceOrdersProcessor.PositionContainer(positionInfo);
   }

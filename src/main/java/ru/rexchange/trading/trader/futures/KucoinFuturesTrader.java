@@ -69,6 +69,22 @@ public class KucoinFuturesTrader extends CommonFuturesTrader {
   }
 
   @Override
+  public String setLeverage(int leverage) {
+    String result = super.setLeverage(leverage);
+    //если result == null, значит ничего не менялось
+    if (result != null && baseCurrency != null) {
+      try {
+        //todo в момент первоначального конфига данных о торгуемой паре ещё нет, так что leverage не передать на биржу
+        // пара проставляется в момент привязки трейдера к боту
+        KucoinOrdersProcessor.setLeverage(getSignedClient(), getSymbol(), leverage);
+      } catch (Exception e) {
+        getLogger().error("Unsuccessful leverage change", e);
+      }
+    }
+    return result;
+  }
+
+  @Override
   public boolean preOpenBuy(DealInfo info) {
     try {
       /*if (leverage != null)
@@ -159,8 +175,10 @@ public class KucoinFuturesTrader extends CommonFuturesTrader {
   protected String findLastOpenedOrder(boolean buy, AbstractOrdersProcessor processor) {
     try {
       List<OrderResponse> orders = getSignedClient().getFilledOrders(getSymbol());
+      orders.sort((o1, o2) -> -o1.getOrderTime().compareTo(o2.getOrderTime()));
       String orderDirection = buy ? Consts.BUY : Consts.SELL;
       for (OrderResponse o : orders) {
+        LOGGER.trace(o.toString());
         if (orderDirection.equals(o.getSide().toUpperCase()) && StringUtils.isEmpty(o.getStop()))
           return o.getClientOid();
       }
@@ -173,6 +191,11 @@ public class KucoinFuturesTrader extends CommonFuturesTrader {
   @Override
   public void setAuthInfo(TraderAuthenticator authenticator) {
     super.setAuthInfo(authenticator);
+    if (!this.getAuthenticator().equals(authenticator)) {//todo никогда не вызывается?
+      if (leverage != null && baseCurrency != null)
+        KucoinOrdersProcessor.setLeverageSafe(apiClient, getSymbol(), leverage);
+    }
+
     //В Kucoin, похоже, нет режимов позиций
     /* try {
       SignedClient apiClient = getSignedClient();

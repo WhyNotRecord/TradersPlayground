@@ -2,15 +2,16 @@ package ru.rexchange.trading.trader;
 
 import com.kucoin.futures.core.KucoinFuturesClientBuilder;
 import com.kucoin.futures.core.KucoinFuturesRestClient;
+import com.kucoin.futures.core.rest.request.ChangeCrossUserLeverageRequest;
 import com.kucoin.futures.core.rest.request.ChangeMarginRequest;
 import com.kucoin.futures.core.rest.request.OrderCreateApiRequest;
 import com.kucoin.futures.core.rest.response.AccountOverviewResponse;
 import com.kucoin.futures.core.rest.response.ContractResponse;
 import com.kucoin.futures.core.rest.response.OrderCreateResponse;
 import com.kucoin.futures.core.rest.response.OrderResponse;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
+import org.jetbrains.annotations.NotNull;
 import ru.rexchange.apis.kucoin.KucoinFuturesApiProvider;
 import ru.rexchange.apis.kucoin.KucoinOrdersProcessor;
 import ru.rexchange.tools.StringUtils;
@@ -160,6 +161,15 @@ public class KucoinSignedClient extends AbstractSignedClient {
       kucoinFuturesRestApiClient.positionAPI().changeMarginMode(
           ChangeMarginRequest.builder().symbol(kSymbol).marginMode(CROSS_MARGIN_MODE).build());
     }
+  }
+
+  public boolean setLeverage(String symbol, Integer leverage) throws Exception {
+    String kSymbol = KucoinFuturesApiProvider.convertSymbolFormat(symbol);
+    ChangeCrossUserLeverageRequest request = ChangeCrossUserLeverageRequest.builder().
+        symbol(kSymbol).leverage(String.valueOf(leverage)).build();
+    return Utils.executeInFewAttempts(() ->
+            kucoinFuturesRestApiClient.positionAPI().changeCrossUserLeverage(request),
+        REQUEST_ATTEMPTS_COUNT, FAILED_REQUEST_REPEAT_PAUSE);
   }
 
   public void setPositionMode(boolean hedge) throws Exception {

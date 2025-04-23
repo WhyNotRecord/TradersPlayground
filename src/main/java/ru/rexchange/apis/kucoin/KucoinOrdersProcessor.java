@@ -23,6 +23,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.net.UnknownHostException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
@@ -56,7 +57,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
   @Override
   public OrderInfoObject limitOrder(AbstractSignedClient aClient, float price, String pair,
                                     double amount, boolean buy, Integer leverage) throws UserException {
-    LOGGER.debug(String.format("Placing a %s limit order for %s", buy ? "buy" : "sell", pair));
+    LOGGER.debug("Placing a {} limit order for {}", buy ? "buy" : "sell", pair);
     KucoinSignedClient apiClient = (KucoinSignedClient) aClient;
     checkMarginMode(apiClient, pair);
 
@@ -68,11 +69,10 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       OrderResponse order = buy ?
           openBuy(apiClient, true, symbolInfo.getSymbol(), preparedAmount, preparedPrice, leverage) :
           openSell(apiClient, true, symbolInfo.getSymbol(), preparedAmount, preparedPrice, leverage);
-      LOGGER.debug(String.format("Posted a limit %s order with id %s for %s %s by %s",
-          order.getSide(), order.getClientOid(), preparedAmount, pair, preparedPrice));
+      LOGGER.debug("Posted a limit {} order with id {} for {} {} by {}", order.getSide(), order.getClientOid(), preparedAmount, pair, preparedPrice);
       return convertOrder(order, null);
     } catch (Exception e) {
-      LOGGER.error(String.format("Place %s order failed: %s %s", (buy ? "buy" : "sell"), amount, pair));
+      LOGGER.error("Place {} order failed: {} {}", (buy ? "buy" : "sell"), amount, pair);
       throw new SystemException(e);
     }
   }
@@ -164,7 +164,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       else if (srcOrder.isCancelExist())
         return OrderInfoObject.OrderStatus.CANCELED;
     }
-    LOGGER.debug("evaluateStatus: default");
+    LOGGER.trace("evaluateStatus: default");
     return OrderInfoObject.OrderStatus.NEW;
   }
 
@@ -172,12 +172,11 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
   public AbstractPositionContainer placeOrder(AbstractSignedClient aClient, AbstractPositionContainer openPosition, boolean limit,
                                               float price, String pair, double amount, Integer leverage, boolean buy,
                                               @Nullable Float stopLoss, @Nullable Float takeProfit) throws UserException {
-    LOGGER.debug(String.format("Placing a %s %s order for %s",
-        buy ? "buy" : "sell", limit ? "limit" : "market", pair));
+    LOGGER.debug("Placing a {} {} order for {}", buy ? "buy" : "sell", limit ? "limit" : "market", pair);
     KucoinSignedClient apiClient = (KucoinSignedClient) aClient;
-    /*if (leverage != null && !testOrders) {
-        setLeverageSafe(apiClient, pair, leverage);
-    }*/
+    if (leverage != null && !testOrders) {
+      setLeverageSafe(apiClient, pair, leverage);
+    }
     checkMarginMode(apiClient, pair);
     try {
       ContractResponse symbolInfo = KucoinFuturesApiProvider.getSymbolInfo(pair);
@@ -188,10 +187,10 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       OrderResponse order = buy ?
           openBuy(apiClient, limit, symbolInfo.getSymbol(), preparedAmount, preparedPrice, leverage) :
           openSell(apiClient, limit, symbolInfo.getSymbol(), preparedAmount, preparedPrice, leverage);
-      LOGGER.debug(String.format("Placed a %s order with id %s for %s %s by %s",
-              order.getSide(), order.getClientOid(), preparedAmount, pair, preparedPrice));
+      LOGGER.debug("Placed a {} order with id {} for {} {} by {}",
+          order.getSide(), order.getClientOid(), preparedAmount, pair, preparedPrice);
       if (!KucoinSignedClient.OrderStatus.DONE.equals(order.getStatus())) {
-        LOGGER.info(String.format("Order is %s, not %s!", order.getStatus(), KucoinSignedClient.OrderStatus.DONE));
+        LOGGER.info("Order is {}, not {}!", order.getStatus(), KucoinSignedClient.OrderStatus.DONE);
       }
       PositionContainer result;
 
@@ -221,7 +220,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
 
       return result;
     } catch (Exception e) {
-      LOGGER.error(String.format("Place %s order failed: %s %s", (buy ? "buy" : "sell"), amount, pair));
+      LOGGER.error("Place {} order failed: {} {}", (buy ? "buy" : "sell"), amount, pair);
       throw new SystemException(e);
     }
   }
@@ -230,8 +229,11 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
   public AbstractPositionContainer placeMarketOrder(AbstractSignedClient aClient, AbstractPositionContainer openPosition,
                                                     String pair, double amount, Integer leverage,
                                                     boolean buy) throws UserException {
-    LOGGER.debug(String.format("Placing a %s market order for %s", buy ? "buy" : "sell", pair));
+    LOGGER.debug("Placing a {} market order for {}", buy ? "buy" : "sell", pair);
     KucoinSignedClient apiClient = (KucoinSignedClient) aClient;
+    if (leverage != null && !testOrders) {
+      setLeverageSafe(apiClient, pair, leverage);
+    }
     checkMarginMode(apiClient, pair);
 
     try {
@@ -243,10 +245,10 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       OrderResponse order = buy ?
           openBuy(apiClient, false, symbolInfo.getSymbol(), convertedAmount, preparedPrice, leverage) :
           openSell(apiClient, false, symbolInfo.getSymbol(), convertedAmount, preparedPrice, leverage);
-      LOGGER.debug(String.format("Executed a %s order with id %s for %s %s by %s",
-              order.getSide(), order.getClientOid(), convertedAmount, pair, lastPrice));
+      LOGGER.debug("Executed a {} order with id {} for {} {} by {}",
+          order.getSide(), order.getClientOid(), convertedAmount, pair, lastPrice);
       if (!KucoinSignedClient.OrderStatus.DONE.equals(order.getStatus())) {
-        LOGGER.info(String.format("Order is %s, not %s!", order.getStatus(), KucoinSignedClient.OrderStatus.DONE));
+        LOGGER.info("Order is {}, not {}!", order.getStatus(), KucoinSignedClient.OrderStatus.DONE);
       }
       OrderInfoObject response = convertOrder(order, null);
       if (openPosition == null)
@@ -256,7 +258,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
         return openPosition;
       }
     } catch (Exception e) {
-      LOGGER.error(String.format("Place %s order on %s failed", (buy ? "buy" : "sell"), pair));
+      LOGGER.error("Place {} order on {} failed", (buy ? "buy" : "sell"), pair);
       throw new SystemException(e);
     }
   }
@@ -285,7 +287,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       BigDecimal[] division = result.divideAndRemainder(divisor);
       result = division[0];
       if (BigDecimal.ZERO.compareTo(division[1]) != 0) {
-        LOGGER.debug(String.format("Given amount %s is not dividable by %s, will be fitted", result, divisor));
+        LOGGER.trace("Given amount {} is not dividable by {}, will be fitted", result, divisor);
         if (BigDecimal.ZERO.compareTo(result) == 0)
           throw new UserException("Amount is too small - %s. Min quantity = %s", result, divisor);
       }
@@ -293,7 +295,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       if (result.longValue() > symbolInfo.getMaxOrderQty())
         throw new UserException("Amount is too big - %s. Max quantity = %s", result, symbolInfo.getMaxOrderQty());
     }
-    LOGGER.trace("Fitted amount is " + result);
+    LOGGER.trace("Fitted amount is {}", result);
     return result;
   }
 
@@ -311,7 +313,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       BigDecimal divisor = BigDecimal.valueOf(symbolInfo.getTickSize()).round(MathContext.DECIMAL32);
       BigDecimal[] division = result.divideAndRemainder(divisor);
       if (BigDecimal.ZERO.compareTo(division[1]) != 0) {
-        LOGGER.debug(String.format("Given price %s is not dividable by %s, will be fitted", result, divisor));
+        LOGGER.debug("Given price {} is not dividable by {}, will be fitted", result, divisor);
         result = division[0].multiply(divisor, MathContext.DECIMAL32);
         if (BigDecimal.ZERO.compareTo(result) == 0)
           throw new UserException("Price is too small - %s. Min quantity = %s", result, divisor);
@@ -322,9 +324,24 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       if (result.compareTo(symbolInfo.getMaxPrice()) > 0)
         throw new UserException("Price is too big - %s. Max price = %s", result, symbolInfo.getMaxPrice());
     }
-    LOGGER.trace("Fitted price value is " + result);
+    LOGGER.trace("Fitted price value is {}", result);
     return result;
   }
+
+  public static String setLeverage(KucoinSignedClient apiClient, String pair, Integer leverage) throws Exception {
+    LOGGER.debug("Setting leverage for pair {} to {}", pair, leverage);
+    return apiClient.setLeverage(pair, leverage) ? "success" : "failure";
+  }
+
+  public static String setLeverageSafe(KucoinSignedClient apiClient, String pair, Integer leverage) {
+    try {
+      return setLeverage(apiClient, pair, leverage);
+    } catch (Exception e) {
+      LOGGER.error("Unsuccessful leverage change for pair {}", pair, e);
+      return null;
+    }
+  }
+
 
   private OrderResponse openBuy(KucoinSignedClient client, boolean limit, String pair, BigDecimal quantity,
                                 BigDecimal price, Integer leverage) throws Exception {
@@ -338,7 +355,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     } else {
       OrderResponse response = client.postOrder(pair, KucoinSignedClient.OrderSide.BUY,
           KucoinSignedClient.OrderType.MARKET, null, null, quantity, null, leverage);
-      LOGGER.trace("Buy order: " + response);
+      LOGGER.trace("Buy order: {}", response);
       //todo можно запрашивать данные о позициях и уточнять цену открытия
       if (response.getPrice() == null || BigDecimal.ZERO.compareTo(response.getPrice()) == 0)
         response.setPrice(price);
@@ -377,7 +394,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     } else {
       OrderResponse response = client.postOrder(symbolInfo.getSymbol(), getClosingOrderSide(buy),
           KucoinSignedClient.OrderType.MARKET, null, true, null, preparedAmount, null, null);
-      LOGGER.trace("Close order: " + response);
+      LOGGER.trace("Close order: {}", response);
       response.setPrice(preparedPrice);
       return response;
     }
@@ -392,7 +409,11 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     try {
       //Отменяем существующий take-profit при наличии
       if (checkForExistingTakeProfit(apiClient, orders, buy, positionInfo.getSymbol()) != null) {//todo unknown order sent
-        LOGGER.debug(String.format("Trying to recreate TP order at new price %s", takeProfitValue));
+        LOGGER.debug("Trying to recreate TP order at new price {}", takeProfitValue);
+      }
+      if (takeProfitValue == 0) {
+        LOGGER.info("TP price equals zero, leaving position without take-profit");
+        return null;
       }
       preparedPrice = checkAndFitPrice(symbolInfo, takeProfitValue, 0);
       BigDecimal preparedAmount = checkAndFitAmount(symbolInfo, takeProfitValue, positionInfo.getAmount());
@@ -406,17 +427,17 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
         order = apiClient.postOrder(symbolInfo.getSymbol(), getClosingOrderSide(buy),
             KucoinSignedClient.OrderType.MARKET, getClosingStop(buy, OrderInfoObject.Type.TAKE_PROFIT), null,
             preparedAmount, preparedPrice, null);
-        LOGGER.trace("TP order: " + order);
+        LOGGER.trace("TP order: {}", order);
         if (order.getPrice() == null || BigDecimal.ZERO.compareTo(order.getPrice()) == 0)
           order.setPrice(preparedPrice);
       }
-      LOGGER.debug(String.format("Set a %s take profit order with id %s for position %s",
-          order.getSide(), order.getClientOid(), positionInfo.getPositionId()));
+      LOGGER.debug("Set a {} take profit order with id {} for position {}",
+          order.getSide(), order.getClientOid(), positionInfo.getPositionId());
       return order;
     } catch (Exception e) {
       //TODO e.getMessage().contains("is existing") - значит уже существует TP для позиции
-      LOGGER.error(String.format("Failed %s TP order for %s %s by %s",
-          positionInfo.getDirection(), positionInfo.getAmount(), positionInfo.getSymbol(), preparedPrice), e);
+      LOGGER.error("Failed {} TP order for {} {} by {}",
+          positionInfo.getDirection(), positionInfo.getAmount(), positionInfo.getSymbol(), preparedPrice, e);
       return null;
     }
   }
@@ -428,7 +449,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
         getClosingOrderSide(buy), getClosingStop(buy, OrderInfoObject.Type.TAKE_PROFIT),
         KucoinSignedClient.OrderType.MARKET);
     if (existingTakeProfit != null) {
-      LOGGER.debug(String.format("Existing TP at %s found", existingTakeProfit.getStopPrice().floatValue()));
+      LOGGER.debug("Existing TP at {} found", existingTakeProfit.getStopPrice().floatValue());
       if (!cancelOrder(apiClient, existingTakeProfit))
         throw new SystemException("Unsuccessful TP order cancellation " + existingTakeProfit.getClientOid());
       return existingTakeProfit.getPrice().floatValue();
@@ -444,7 +465,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     try {
       //Отменяем существующий stop-loss при наличии
       if (checkForExistingStopLoss(apiClient, orders, buy, positionInfo.getSymbol()) != null) {//todo unknown order sent
-        LOGGER.debug(String.format("Trying to recreate SL order at new price %s", stopLossValue));
+        LOGGER.debug("Trying to recreate SL order at new price {}", stopLossValue);
       }
       preparedPrice = checkAndFitPrice(symbolInfo, stopLossValue, 0);
       BigDecimal preparedAmount = checkAndFitAmount(symbolInfo, stopLossValue, positionInfo.getAmount());
@@ -459,17 +480,17 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
             KucoinSignedClient.OrderType.MARKET, getClosingStop(buy, OrderInfoObject.Type.STOP_LOSS), null,
             //TODO может измениться количество из-за конвертаций ордеров
             preparedAmount, preparedPrice, null);
-        LOGGER.trace("SL order: " + order);
+        LOGGER.trace("SL order: {}", order);
         if (order.getPrice() == null || BigDecimal.ZERO.compareTo(order.getPrice()) == 0)
           order.setPrice(preparedPrice);
       }
-      LOGGER.debug(String.format("Set a %s stop loss order with id %s for base order %s",
-          order.getSide(), order.getClientOid(), positionInfo.getPositionId()));
+      LOGGER.debug("Set a {} stop loss order with id {} for base order {}",
+          order.getSide(), order.getClientOid(), positionInfo.getPositionId());
       return order;
     } catch (Exception e) {
       //TODO e.getMessage().contains("is existing") - значит уже существует SL для позиции
-      LOGGER.error(String.format("Failed %s SL order for %s %s by %s",
-          positionInfo.getDirection(), positionInfo.getAmount(), positionInfo.getSymbol(), preparedPrice), e);
+      LOGGER.error("Failed {} SL order for {} {} by {}",
+          positionInfo.getDirection(), positionInfo.getAmount(), positionInfo.getSymbol(), preparedPrice, e);
       return null;
     }
   }
@@ -481,7 +502,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
         getClosingOrderSide(buy), getClosingStop(buy, OrderInfoObject.Type.STOP_LOSS),
         KucoinSignedClient.OrderType.MARKET);
     if (existingStopLoss != null) {
-      LOGGER.debug(String.format("Existing SL at %s found", existingStopLoss.getStopPrice().floatValue()));
+      LOGGER.debug("Existing SL at {} found", existingStopLoss.getStopPrice().floatValue());
       if (!cancelOrder(apiClient, existingStopLoss))
         throw new SystemException("Unsuccessful SL order cancellation " + existingStopLoss.getClientOid());
       return existingStopLoss.getPrice().floatValue();
@@ -496,28 +517,27 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     }
     if (orderIsFilled(order)) {
     //if (!KucoinSignedClient.OrderStatus.OPEN.equals(order.getStatus())) {//TODO а что делать в противном случае?
-      LOGGER.warn(String.format("Order %s is %s, can not be canceled!", order.getClientOid(), order.getStatus()));
+      LOGGER.warn("Order {} is {}, can not be canceled!", order.getClientOid(), order.getStatus());
       return order.isCancelExist();//todo check
     }
-    LOGGER.debug(String.format("Cancelling %s order %s for %s by %s on %s",
-        order.getSide(), order.getClientOid(), order.getSize(), order.getPrice(), order.getSymbol()));
+    LOGGER.debug("Cancelling {} order {} for {} by {} on {}",
+        order.getSide(), order.getClientOid(), order.getSize(), order.getPrice(), order.getSymbol());
     if (testOrders) {
-      LOGGER.debug(String.format("Test order on %s cancelled: amount - %s price - %s",
-          order.getSymbol(), order.getSize(), order.getPrice()));
+      LOGGER.debug("Test order on {} cancelled: amount - {} price - {}", order.getSymbol(), order.getSize(), order.getPrice());
       order.setStatus(OrderInfoObject.OrderStatus.CANCELED);
       return true;
     }
     try {
       return apiClient.cancelOrder(order.getSymbol(), order.getId(), order.getClientOid());
     } catch (Exception e) {
-      LOGGER.error(String.format("Failed to cancel %s order %s for %s by %s on %s",
-          order.getSide(), order.getClientOid(), order.getSize(), order.getPrice(), order.getSymbol()), e);
+      LOGGER.error("Failed to cancel {} order {} for {} by {} on {}",
+          order.getSide(), order.getClientOid(), order.getSize(), order.getPrice(), order.getSymbol(), e);
       return false;
     }
   }
 
   private static boolean orderIsFilled(OrderResponse order) {
-    LOGGER.trace("Is filled? " + order.toString());
+    LOGGER.trace("Is filled? {}", order.toString());
     return (order.getStop() == null && KucoinSignedClient.OrderStatus.DONE.equals(order.getStatus())) ||
         Boolean.TRUE.equals(order.getStopTriggered()) || order.getFilledSize().compareTo(BigDecimal.ZERO) > 0;
   }
@@ -532,22 +552,22 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
       return false;
     }
     if (!OrderInfoObject.OrderStatus.NEW.equals(order.getStatus())) {//TODO а что делать в противном случае?
-      LOGGER.warn(String.format("Order %s is %s, can not be canceled!", order.getOrderId(), order.getStatus()));
+      LOGGER.warn("Order {} is {}, can not be canceled!", order.getOrderId(), order.getStatus());
       return OrderInfoObject.OrderStatus.CANCELED.equals(order.getStatus());
     }
-    LOGGER.debug(String.format("Cancelling %s order %s for %s by %s on %s",
-        order.getDirection(), order.getOrderId(), order.getAmount(), order.getPrice(), order.getSymbol()));
+    LOGGER.debug("Cancelling {} order {} for {} by {} on {}",
+        order.getDirection(), order.getOrderId(), order.getAmount(), order.getPrice(), order.getSymbol());
     if (testOrders) {
-      LOGGER.debug(String.format("Test order on %s cancelled: amount - %s price - %s",
-          order.getSymbol(), order.getAmount(), order.getPrice()));
+      LOGGER.debug("Test order on {} cancelled: amount - {} price - {}",
+          order.getSymbol(), order.getAmount(), order.getPrice());
       order.setStatus(OrderInfoObject.OrderStatus.CANCELED);
       return true;
     }
     try {
       return ((KucoinSignedClient) apiClient).cancelOrder(order.getSymbol(), order.getExternalId(), order.getOrderId());
     } catch (Exception e) {
-      LOGGER.error(String.format("Failed to cancel %s order %s for %s by %s on %s",
-          order.getDirection(), order.getOrderId(), order.getAmount(), order.getPrice(), order.getSymbol()), e);
+      LOGGER.error("Failed to cancel {} order {} for {} by {} on {}",
+          order.getDirection(), order.getOrderId(), order.getAmount(), order.getPrice(), order.getSymbol(), e);
       return false;
     }
   }
@@ -572,15 +592,17 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     return null;
   }
 
-  protected OrderResponse updateOrder(KucoinSignedClient apiClient, OrderInfoObject order) {
+  protected OrderResponse updateOrder(KucoinSignedClient apiClient, OrderInfoObject order) throws UnknownHostException {
     if (order == null) {
       LOGGER.error("Trying to update null order");
       return null;
     }
     try {
       return apiClient.queryOrder(order.getSymbol(), null, order.getOrderId());
+    } catch (UnknownHostException e) {
+      throw e;
     } catch (Exception e) {
-      LOGGER.error(String.format("Update order %s failed", order.getOrderId()));
+      LOGGER.error("Update order {} failed", order.getOrderId());
       throw new SystemException(e);
     }
   }
@@ -613,8 +635,8 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     order.setStatus(orderStatus);
     order.setOrderTime(DateUtils.currentTimeMillis());
     order.setClientOid(generateTestOrderId());
-    LOGGER.debug(String.format("Test order on %s created: amount - %s price - %s",
-        order.getSymbol(), order.getSize(), order.getPrice()));
+    LOGGER.debug("Test order on {} created: amount - {} price - {}",
+        order.getSymbol(), order.getSize(), order.getPrice());
     return order;
   }
 
@@ -648,7 +670,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     // можно просто создавать свой OrdersProcessor для каждого трейдера
     openOrders = apiClient.getOrders(true, symbol);
     openOrdersTs = DateUtils.currentTimeMillis();
-    LOGGER.debug("Open orders loaded count - " + openOrders.size());
+    LOGGER.debug("Open orders loaded count - {}", openOrders.size());
     for (OrderResponse o : openOrders) {
       LOGGER.trace(o.toString());
     }
@@ -756,19 +778,38 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
               getPositionInfo().getSymbol(), getExecutedAmount(),
             Consts.BUY.equals(getPositionInfo().getDirection()));
       } catch (Exception e) {
-        LOGGER.error(String.format("Failed to close %s deal for %s %s by market",
-            getPositionInfo().getDirection(), getExecutedAmount(), getPositionInfo().getSymbol()), e);
+        LOGGER.error("Failed to close {} deal for {} {} by market",
+            getPositionInfo().getDirection(), getExecutedAmount(), getPositionInfo().getSymbol(), e);
         return null;
       }
       return getOrdersProcessor().convertOrder(result, getPositionInfo().getPositionId());
     }
 
     @Override
-    public int update(AbstractSignedClient apiAccess) {
+    public OrderInfoObject closePartially(AbstractSignedClient apiAccess, BigDecimal amount) {
+      if (!(apiAccess instanceof KucoinSignedClient)) {
+        LOGGER.warn("Expected API connector aren't provided");
+        return null;
+      }
+      Object result;
+      try {
+        result = getOrdersProcessor().closeDeal((KucoinSignedClient) apiAccess,
+            getPositionInfo().getSymbol(), amount,
+            Consts.BUY.equals(getPositionInfo().getDirection()));
+      } catch (Exception e) {
+        LOGGER.error("Failed to close {} deal partially for {} {} by market",
+            getPositionInfo().getDirection(), amount, getPositionInfo().getSymbol(), e);
+        return null;
+      }
+      return getOrdersProcessor().convertOrder(result, getPositionInfo().getPositionId());
+    }
+
+    @Override
+    public int update(AbstractSignedClient apiAccess) throws UnknownHostException {
       int result = 0;
       if (!(apiAccess instanceof KucoinSignedClient))
         return result;
-      LOGGER.debug(String.format("Updating position container with id = %s", position.getPositionId()));
+      LOGGER.debug("Updating position container with id = {}", position.getPositionId());
 
       if (!getOrdersProcessor().testOrders) {
         if (getStopLossOrder() != null) {
@@ -812,7 +853,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
         return result;
 
       if (position != null)
-        LOGGER.debug(String.format("Updating position container with id = %s", position.getPositionId()));
+        LOGGER.debug("Updating position container with id = {}", position.getPositionId());
       boolean slCancelled = getOrdersProcessor().cancelOrder(apiAccess, getStopLossOrder());
       if (slCancelled)
         result++;
@@ -849,10 +890,12 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
     }
 
     @Override
-    public Object rearrangeTakeProfit(AbstractSignedClient apiAccess, @Nullable BigDecimal newTp) {
-      if (!(apiAccess instanceof KucoinSignedClient))
-        return null;
-      LOGGER.debug("rearrangeTakeProfit, new value = " + newTp);
+    public boolean rearrangeTakeProfit(AbstractSignedClient apiAccess, @Nullable BigDecimal newTp) {
+      if (!(apiAccess instanceof KucoinSignedClient)) {
+        LOGGER.warn("Can't rearrange take-profit: no valid client provided");
+        return false;
+      }
+      LOGGER.debug("rearrangeTakeProfit, new value = {}", newTp);
       /*if (newTp == null) {
         if (parameters.containsKey(PARAM_TAKE_PROFIT_PERCENT)) {
           Object tpPercent = parameters.get(PARAM_TAKE_PROFIT_PERCENT);
@@ -863,10 +906,10 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
         }
       }*/
       if (newTp == null) {
-        LOGGER.warn(String.format("Can't rearrange TP order %s: no value provided",
-            getTakeProfitOrder().getOrderId()));
-        return null;
+        LOGGER.warn("Can't rearrange TP order {}: no value provided", getTakeProfitOrder().getOrderId());
+        return false;
       }
+      boolean removeOnly = newTp.floatValue() == 0;
       //существующий TP отменится в placeTakeProfit
       /*if (getTakeProfitOrder() != null) {
         Order tp = getOrdersProcessor().cancelOrder((SignedClient) apiAccess, getTakeProfitOrder());
@@ -877,24 +920,23 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
         OrderResponse newTPOrder = getOrdersProcessor().placeTakeProfit((KucoinSignedClient) apiAccess,
             getOrdersProcessor().getOpenOrders((KucoinSignedClient) apiAccess, position.getSymbol()),
             KucoinFuturesApiProvider.getSymbolInfo(position.getSymbol()), this, newTp.floatValue());
-        if (newTPOrder == null)
+        if (!removeOnly && newTPOrder == null)
           throw new NullPointerException("New TP order is null");
         if (takeProfitOrder != null) {
         try {
           this.outdatedOrders.add(getOrdersProcessor().convertOrder(
               getOrdersProcessor().updateOrder((KucoinSignedClient) apiAccess, takeProfitOrder), getPositionInfo().getPositionId()));
         } catch (Exception e) {
-          LOGGER.warn(String.format("Updating outdated TP order with id = %s failed", takeProfitOrder.getOrderId()));
+          LOGGER.warn("Updating outdated TP order with id = {} failed", takeProfitOrder.getOrderId());
           }
         }
-        this.takeProfitOrder = getOrdersProcessor().convertOrder(newTPOrder, getPositionInfo().getPositionId());
+        this.takeProfitOrder = removeOnly ? null : getOrdersProcessor().convertOrder(newTPOrder, getPositionInfo().getPositionId());
         /*LOGGER.debug(String.format("Set a %s take profit order with id %s for base order %s",
             newTPOrder.getSide(), newTPOrder.getClientOrderId(), baseOrder.getClientOrderId()));*/
-        return newTPOrder;
+        return true;
       } catch (Exception e) {
-        LOGGER.error(String.format("Failed %s TP order for %s %s by %s",
-            position.getDirection(), position.getAmount(), position.getSymbol(), newTp), e);
-        return null;
+        LOGGER.error("Failed {} TP order for {} {} by {}", position.getDirection(), position.getAmount(), position.getSymbol(), newTp, e);
+        return false;
       }
     }
 
@@ -904,8 +946,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
         return null;
       LOGGER.debug("rearrangeStopLoss, new value = " + newSl);
       if (newSl == null) {
-        LOGGER.warn(String.format("Can't rearrange SL order %s: no value provided",
-            getStopLossOrder().getOrderId()));
+        LOGGER.warn("Can't rearrange SL order {}: no value provided", getStopLossOrder().getOrderId());
         return null;
       }
       //todo существующий SL не отменяется в placeStopLoss, отменится в трейдере
@@ -925,7 +966,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
           this.outdatedOrders.add(getOrdersProcessor().convertOrder(
               getOrdersProcessor().updateOrder((KucoinSignedClient) apiAccess, stopLossOrder), getPositionInfo().getPositionId()));
         } catch (Exception e) {
-          LOGGER.warn(String.format("Updating outdated SL order with id = %s failed", stopLossOrder.getOrderId()));
+          LOGGER.warn("Updating outdated SL order with id = {} failed", stopLossOrder.getOrderId());
           }
         }
         this.stopLossOrder = getOrdersProcessor().convertOrder(newSlOrder, getPositionInfo().getPositionId());
@@ -933,8 +974,8 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor {
             newSlOrder.getSide(), newSlOrder.getClientOrderId(), baseOrder.getClientOrderId()));*/
         return newSlOrder;
       } catch (Exception e) {
-        LOGGER.error(String.format("Failed %s SL order for %s %s by %s",
-            position.getDirection(), position.getAmount(), position.getSymbol(), newSl), e);
+        LOGGER.error("Failed {} SL order for {} {} by {}",
+            position.getDirection(), position.getAmount(), position.getSymbol(), newSl, e);
         return null;
       }
     }
