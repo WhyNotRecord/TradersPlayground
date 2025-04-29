@@ -26,6 +26,7 @@ public class BinanceFuturesApiProvider {
   public static final long FAILED_REQUEST_REPEAT_PAUSE = 500L;
   public static final long EXCHANGE_INFO_CACHE_LIVE_TIME = 60 * 60 * 1000L;
   public static final long BALANCE_INFO_CACHE_LIVE_TIME = 15 * 1000L;
+  //todo вынести отсюда в BinanceSignedClient всё, что требует авторизации
 
   public static boolean canTrade(BinanceSignedClient client) throws Exception {
       return client.canTrade();
@@ -44,12 +45,12 @@ public class BinanceFuturesApiProvider {
     return balanceInfoCache.get(client.toString()).getBalances();
   }
 
-  public static BigDecimal getFreeAssetBalance(String currency, BinanceSignedClient client) throws Exception {
+  /*public static BigDecimal getFreeAssetBalance(String currency, BinanceSignedClient client) throws Exception {
     List<AccountBalance> balances = getBalances(client);
     Optional<AccountBalance> asset =
           balances.stream().filter(asset1 -> currency.equals(asset1.getAsset())).findFirst();
     return asset.map(AccountBalance::getAvailableBalance).orElse(BigDecimal.ZERO);
-  }
+  }*/
 
   public static AccountBalance getAssetBalance(String currency, BinanceSignedClient client) throws Exception {
     List<AccountBalance> balances = getBalances(client);

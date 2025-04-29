@@ -3,10 +3,8 @@ package ru.rexchange.trading.trader;
 import com.bybit.api.client.config.BybitApiConfig;
 import com.bybit.api.client.domain.CategoryType;
 import com.bybit.api.client.domain.TradeOrderType;
-import com.bybit.api.client.domain.TriggerBy;
 import com.bybit.api.client.domain.account.AccountType;
 import com.bybit.api.client.domain.account.request.AccountDataRequest;
-import com.bybit.api.client.domain.asset.request.AssetDataRequest;
 import com.bybit.api.client.domain.position.PositionMode;
 import com.bybit.api.client.domain.position.request.PositionDataRequest;
 import com.bybit.api.client.domain.trade.PositionIdx;
@@ -19,12 +17,14 @@ import com.bybit.api.client.restApi.BybitApiTradeRestClient;
 import com.bybit.api.client.service.BybitApiClientFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.rexchange.apis.bybit.BybitFuturesApiProvider;
 import ru.rexchange.exception.SystemException;
 import ru.rexchange.trading.TraderAuthenticator;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+//Здесь будут собраны методы для обращения к API биржи, требующие ключ API
 public class BybitSignedClient extends AbstractSignedClient {
   protected static Logger LOGGER = LoggerFactory.getLogger(BybitSignedClient.class);
   public static final String FIELD_ORDER_ID = "orderId";
@@ -66,7 +66,7 @@ public class BybitSignedClient extends AbstractSignedClient {
     PositionMode positionMode = hedge ? PositionMode.BOTH_SIDES : PositionMode.MERGED_SINGLE;
     synchronized(lock) {
       try {
-        Map<String, Object> result = checkResponse(pClient.switchPositionMode(request));
+        Map<String, Object> result = BybitFuturesApiProvider.checkResponse(pClient.switchPositionMode(request));
       } catch (SystemException e) {
         if (!e.getMessage().contains("is not modified"))
           throw e;
@@ -88,18 +88,9 @@ public class BybitSignedClient extends AbstractSignedClient {
   public Object getBalance(String currency) throws Exception {
     AccountDataRequest req = AccountDataRequest.builder().coins(currency).accountType(AccountType.UNIFIED).window("10000").build();
     synchronized(lock) {
-      Map<String, Object> response = checkResponse(aClient.getWalletBalance(req));
+      Map<String, Object> response = BybitFuturesApiProvider.checkResponse(aClient.getWalletBalance(req));
       return response;
     }
-  }
-
-  private Map<String, Object> checkResponse(Object response) {
-    Map<String, Object> map = (Map<String, Object>) response;
-    if (!Objects.equals(map.get("retCode"), 0) && map.containsKey("retMsg"))
-      throw new SystemException(String.valueOf(map.get("retMsg")));
-    Map<String, Object> result = (Map<String, Object>) map.get("result");
-    System.out.println("Successful call, response:\n" + result);
-    return result;
   }
 
   /*public List<Order> getFilledOrders(String symbol) throws Exception {
@@ -157,7 +148,7 @@ public class BybitSignedClient extends AbstractSignedClient {
           .build();
 
       var response = client.createOrder(orderRequest);
-      Map<String, Object> result = checkResponse(response);
+      Map<String, Object> result = BybitFuturesApiProvider.checkResponse(response);
       //LOGGER.info("Order placed: {}", response);
       if (!result.containsKey(FIELD_ORDER_ID))
         throw new SystemException("Response doesn't contain orderId");
@@ -173,15 +164,9 @@ public class BybitSignedClient extends AbstractSignedClient {
         .category(CategoryType.LINEAR)
         .symbol(symbol).orderId(orderId).build();
     var response = client.getOpenOrders(orderRequest);
-    Map<String, Object> result = checkResponse(response);
-    List<Map<String, Object>> orders = extractOrders(result);
+    Map<String, Object> result = BybitFuturesApiProvider.checkResponse(response);
+    List<Map<String, Object>> orders = BybitFuturesApiProvider.extractList(result);
     return orders.isEmpty() ? null : orders.get(0);
-  }
-
-  private List<Map<String, Object>> extractOrders(Map<String, Object> result) {
-    if (!result.containsKey("list"))
-      return Collections.emptyList();
-    return (List<Map<String, Object>>)(result.get("list"));
   }
 
   public boolean cancelOrder(String symbol, String orderId) {
@@ -193,7 +178,7 @@ public class BybitSignedClient extends AbstractSignedClient {
           .build();
 
       Object response = client.cancelOrder(cancelRequest);
-      Map<String, Object> result = checkResponse(response);
+      Map<String, Object> result = BybitFuturesApiProvider.checkResponse(response);
       //LOGGER.info("Order cancelled: {}", response);
       return result.containsKey(FIELD_ORDER_ID) && orderId.equals(result.get(FIELD_ORDER_ID));
     } catch (Exception e) {
