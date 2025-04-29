@@ -47,8 +47,8 @@ public class BybitOrdersProcessorTest {
   }
 
 
-    @NotNull
-  private static BybitSignedClient getSignedClient() {
+  @NotNull
+  public static BybitSignedClient getSignedClient() {
     return new BybitSignedClient(new TraderAuthenticator("BybAuth",
         System.getProperty(TestTools.API_KEY_PROPERTY),
         System.getProperty(TestTools.API_SECRET_KEY_PROPERTY)));

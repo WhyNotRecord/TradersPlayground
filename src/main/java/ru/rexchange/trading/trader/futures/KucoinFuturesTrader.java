@@ -17,7 +17,7 @@ import ru.rexchange.trading.trader.KucoinSignedClient;
 
 import java.util.List;
 
-public class KucoinFuturesTrader extends CommonFuturesTrader {
+public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient> {
   protected static Logger LOGGER = LoggerFactory.getLogger(KucoinFuturesTrader.class);
   private KucoinSignedClient apiClient = null;
 
@@ -159,7 +159,7 @@ public class KucoinFuturesTrader extends CommonFuturesTrader {
   }
 
   @Override
-  protected AbstractOrdersProcessor getOrdersProcessor() {
+  protected AbstractOrdersProcessor<?, KucoinSignedClient> getOrdersProcessor() {
     return KucoinOrdersProcessor.getInstance(false);
   }
 

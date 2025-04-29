@@ -26,18 +26,15 @@ public abstract class AbstractTrader {
   protected static Logger LOGGER = LoggerFactory.getLogger(AbstractTrader.class);
 	public static final String DEFAULT_TRADER = "default";
 
-	protected String name = DEFAULT_TRADER;
-	protected String id = null;
+	@Getter
+  protected String name = DEFAULT_TRADER;
+	@Getter
+  protected String id = null;
 	@Getter @Setter
 	private boolean active = true;
 
-	//TODO трейдеру (фьючей) необязательно хранить каждую валюту
-	// для ордеров можно передавать в DealInfo
-	// при загрузке состояния можно передавать в параметрах при вызове из бота
-	// при сохранении состояния использовать данные из самого ордера (можно хранить в виде символа пары)
-	// однако, нужно как-то выяснять доступный баланс
 	protected String baseCurrency;
-	protected String quotedCurrency;
+	protected String quotedCurrency = null;
 	protected float baseCurrencyAmount = 0f;
 	protected float quotedCurrencyAmount = 0f;
 	protected float baseCurrencyTotalAmount = 0f;
@@ -117,7 +114,8 @@ public abstract class AbstractTrader {
 
 	public void setCurrencyPair(String baseCurrency, String quotedCurrency) {
 		this.baseCurrency = baseCurrency;
-		this.quotedCurrency = quotedCurrency;
+		if (this.quotedCurrency == null)//на случай, если уже задана в параметрах
+			this.quotedCurrency = quotedCurrency;
 		requestCurrenciesAmount();
 	}
 
@@ -452,17 +450,17 @@ public abstract class AbstractTrader {
 	}
 
 	protected String prepareDealNotificationMessage(float price, double amount, Float tp, Float sl, boolean buy) {
-		return String.format("Opened %s deal on %s:%s.\nPrice: %.4f (TP:%.4f/SL:%.4f), amount: %.4f",
+		return String.format("%s order on %s:%s.\nPrice: %.4f (TP:%.4f/SL:%.4f), amount: %.4f",
 				buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, price, tp, sl, amount);
 	}
 
 	protected String prepareDealFailedNotificationMessage(String message, boolean buy) {
-		return String.format("Opening %s deal on %s:%s failed. %n%s",
+		return String.format("%s order on %s:%s <<failed>>. %n%s",
 				buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, message);
 	}
 
 	protected String prepareDealClosedNotificationMessage(String side, Float rate, long closeTime, Float profit, String initiator) {
-		return String.format("%s deal on %s:%s closed (by %s) at %s (%s).\n<<Profit = %.2f>>",
+		return String.format("%s deal on %s:%s closed (by %s) at %s (%s).\nProfit = <<%.2f>>",
 				side, baseCurrency, quotedCurrency, initiator, rate, DateUtils.formatTimeMin(closeTime), profit);
 	}
 
@@ -473,7 +471,7 @@ public abstract class AbstractTrader {
 
 	protected String prepareStopChangedNotificationMessage(String side, String stopType, Float stopRate,
 																												 float expectedProfit, String strategy) {
-		return String.format("%s for %s deal on %s:%s changed (%s). New value: %s.\n<<Expected profit: %.2f>>",
+		return String.format("%s for %s deal on %s:%s changed (%s). New value: %s.\nExpected profit: <<%.2f>>",
 				stopType, side, baseCurrency, quotedCurrency, strategy, stopRate, expectedProfit);
 	}
 
@@ -506,14 +504,6 @@ public abstract class AbstractTrader {
 	protected String prepareOrderFailedNotificationMessage(String message, boolean buy) {
 		return String.format("Posting %s order on %s:%s failed. %n%s",
 				buy ? "BUY" : "SELL", baseCurrency, quotedCurrency, message);
-	}
-
-	public String getName() {
-		return name;
-	}
-
-	public String getId() {
-		return id;
 	}
 
 	@Override

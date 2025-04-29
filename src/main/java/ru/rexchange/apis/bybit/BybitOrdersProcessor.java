@@ -9,14 +9,16 @@ import ru.rexchange.gen.PositionInfo;
 import ru.rexchange.gen.PositionInfoObject;
 import ru.rexchange.trading.AbstractOrdersProcessor;
 import ru.rexchange.trading.trader.AbstractPositionContainer;
-import ru.rexchange.trading.trader.AbstractSignedClient;
 import ru.rexchange.trading.trader.BybitSignedClient;
 import ru.rexchange.trading.trader.futures.FuturesPositionContainer;
 
 import java.math.BigDecimal;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.util.List;
+import java.util.Map;
 
-public class BybitOrdersProcessor extends AbstractOrdersProcessor {
+public class BybitOrdersProcessor extends AbstractOrdersProcessor<Map<String, Object>, BybitSignedClient> {
   protected static Logger LOGGER = LoggerFactory.getLogger(BybitOrdersProcessor.class);
   private static BybitOrdersProcessor instance = null;
   private static final long OPEN_ORDERS_CACHE_LIVE_TIME = 60 * 1000L;
@@ -38,37 +40,40 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor {
   }
 
   @Override
-  public AbstractPositionContainer placeOrder(AbstractSignedClient apiClient, AbstractPositionContainer openPosition, boolean limit, float price, String pair, double amount, Integer leverage, boolean buy, @Nullable Float stopLoss, @Nullable Float takeProfit) throws UserException {
+  public PositionContainer placeOrder(BybitSignedClient apiClient, AbstractPositionContainer<BybitSignedClient> openPosition,
+                                      boolean limit, float price, String pair, double amount, Integer leverage,
+                                      boolean buy, @Nullable Float stopLoss, @Nullable Float takeProfit) throws UserException {
     return null;
   }
 
   @Override
-  public AbstractPositionContainer placeMarketOrder(AbstractSignedClient aClient, AbstractPositionContainer openPosition, String pair, double amount, Integer leverage, boolean buy) throws UserException {
+  public PositionContainer placeMarketOrder(BybitSignedClient aClient, AbstractPositionContainer<BybitSignedClient> openPosition,
+                                            String pair, double amount, Integer leverage, boolean buy) throws UserException {
     return null;
   }
 
   @Override
-  public OrderInfoObject limitOrder(AbstractSignedClient apiClient, float price, String pair, double amount, boolean buy, Integer leverage) throws UserException {
+  public OrderInfoObject limitOrder(BybitSignedClient apiClient, float price, String pair, double amount, boolean buy, Integer leverage) throws UserException {
     return null;
   }
 
   @Override
-  public AbstractPositionContainer createEmptyPositionContainer() {
+  public PositionContainer createEmptyPositionContainer() {
     return null;
   }
 
   @Override
-  public OrderInfoObject queryOrder(AbstractSignedClient client, String symbol, String orderId) throws UserException {
+  public OrderInfoObject queryOrder(BybitSignedClient client, String symbol, String orderId) throws UserException {
     return null;
   }
 
   @Override
-  public OrderInfoObject convertOrder(Object customOrder, String positionId) {
+  public OrderInfoObject convertOrder(Map<String, Object> customOrder, String positionId) {
     return null;
   }
 
   @Override
-  public boolean cancelOrder(AbstractSignedClient apiClient, OrderInfoObject order) {
+  public boolean cancelOrder(BybitSignedClient apiClient, OrderInfoObject order) {
     return false;
   }
 
@@ -77,13 +82,18 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor {
     return 0;
   }
 
+  @Override
+  public Map<String, Object> updateOrder(BybitSignedClient apiAccess, OrderInfoObject order) throws SocketException, UnknownHostException {
+    return Map.of();
+  }
+
   public static void setLeverage(BybitSignedClient apiClient, String symbol, Integer leverage) throws Exception {
-    LOGGER.debug(String.format("Setting leverage for pair %s to %s", symbol, leverage));
+    LOGGER.debug("Setting leverage for pair {} to {}", symbol, leverage);
     apiClient.setLeverage(symbol, leverage);
   }
 
 
-  public static class PositionContainer extends FuturesPositionContainer {
+  public static class PositionContainer extends FuturesPositionContainer<BybitSignedClient> {
     public PositionContainer() {
 
     }
@@ -93,38 +103,33 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor {
     }
 
     @Override
-    public int update(AbstractSignedClient apiAccess) {
+    public int cancel(BybitSignedClient apiAccess) {
       return 0;
     }
 
     @Override
-    public int cancel(AbstractSignedClient apiAccess) {
-      return 0;
-    }
-
-    @Override
-    protected AbstractOrdersProcessor getOrdersProcessor() {
+    protected BybitOrdersProcessor getOrdersProcessor() {
       return getInstance(false);
     }
 
     @Override
-    public OrderInfoObject closeDeal(AbstractSignedClient apiAccess) {
+    public OrderInfoObject closeDeal(BybitSignedClient apiAccess) {
       return null;
     }
 
     @Override
-    public OrderInfoObject closePartially(AbstractSignedClient apiAccess, BigDecimal amount) {
+    public OrderInfoObject closePartially(BybitSignedClient apiAccess, BigDecimal amount) {
       return null;//todo implement
     }
 
     @Override
-    public boolean cancelSafetyOrders(AbstractSignedClient apiAccess) {
+    public boolean cancelSafetyOrders(BybitSignedClient apiAccess) {
       return false;
     }
 
     @Override
-    public boolean rearrangeTakeProfit(AbstractSignedClient apiAccess, BigDecimal newTp) {
-      if (!(apiAccess instanceof BybitSignedClient)) {
+    public boolean rearrangeTakeProfit(BybitSignedClient apiAccess, BigDecimal newTp) {
+      if (apiAccess == null) {
         LOGGER.warn("Can't rearrange take-profit: no valid client provided");
         return false;
       }
@@ -132,13 +137,7 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor {
     }
 
     @Override
-    public Object rearrangeStopLoss(AbstractSignedClient apiAccess, BigDecimal newSl) {
-      return null;
-    }
-
-    @Deprecated
-    @Override
-    public OrderInfoObject getBaseOrder() {
+    public Object rearrangeStopLoss(BybitSignedClient apiAccess, BigDecimal newSl) {
       return null;
     }
 

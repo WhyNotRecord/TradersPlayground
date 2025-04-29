@@ -18,7 +18,7 @@ import ru.rexchange.trading.trader.BinanceSignedClient;
 
 import java.util.List;
 
-public class BinanceFuturesTrader extends CommonFuturesTrader {
+public class BinanceFuturesTrader extends CommonFuturesTrader<BinanceSignedClient> {
   protected static Logger LOGGER = LoggerFactory.getLogger(BinanceFuturesTrader.class);
   private BinanceSignedClient apiClient = null;
 
@@ -173,7 +173,7 @@ public class BinanceFuturesTrader extends CommonFuturesTrader {
   }
 
   @Override
-  protected AbstractOrdersProcessor getOrdersProcessor() {
+  protected AbstractOrdersProcessor<?, BinanceSignedClient> getOrdersProcessor() {
     return BinanceOrdersProcessor.getInstance(false);
   }
 

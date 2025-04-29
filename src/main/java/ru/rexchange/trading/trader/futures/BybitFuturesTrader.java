@@ -1,9 +1,11 @@
 package ru.rexchange.trading.trader.futures;
 
-import com.bybit.api.client.domain.position.PositionMode;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.bybit.api.client.domain.position.PositionMode;
+
 import ru.rexchange.apis.bybit.BybitFuturesApiProvider;
 import ru.rexchange.apis.bybit.BybitOrdersProcessor;
 import ru.rexchange.gen.PositionInfo;
@@ -13,7 +15,7 @@ import ru.rexchange.trading.TraderAuthenticator;
 import ru.rexchange.trading.trader.AbstractPositionContainer;
 import ru.rexchange.trading.trader.BybitSignedClient;
 
-public class BybitFuturesTrader extends CommonFuturesTrader {
+public class BybitFuturesTrader extends CommonFuturesTrader<BybitSignedClient> {
   protected static Logger LOGGER = LoggerFactory.getLogger(BybitFuturesTrader.class);
   private BybitSignedClient apiClient = null;
 
@@ -164,7 +166,7 @@ public class BybitFuturesTrader extends CommonFuturesTrader {
   }
 
   @Override
-  protected AbstractOrdersProcessor getOrdersProcessor() {
+  protected AbstractOrdersProcessor<?, BybitSignedClient> getOrdersProcessor() {
     return BybitOrdersProcessor.getInstance(false);
   }
 

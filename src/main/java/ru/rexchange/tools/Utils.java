@@ -8,11 +8,9 @@ import ru.rexchange.exception.SystemException;
 import java.io.File;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.Locale;
+import java.util.*;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Utils {
@@ -106,6 +104,23 @@ public class Utils {
     return null;*/
   }
 
+  public static <T> T executeInFewAttemptsSafe(Callable<T> p, int attempts, long pause, Logger logger) {
+    long to = pause;
+    Exception last = null;
+    for (int i = 0; i < attempts; i++) {
+      try {
+        return p.call();
+      } catch (Exception e) {
+        logger.error(e.getMessage());
+        Utils.waitSafe(to);
+        to *= 2L;
+        last = e;
+      }
+    }
+    logger.error("Last attempt error", last);
+    return null;
+  }
+
   public static boolean waitForCondition(Callable<Boolean> p, int attempts, long pause, Logger logger, String caption) {
     if (logger == null)
       logger = LOGGER;
@@ -129,13 +144,13 @@ public class Utils {
     Thread thread = new Thread(task, threadName) {
       @Override
       public void run() {
-        LOGGER.info("Thread " + threadName + " started");
+        LOGGER.info("Thread {} started", threadName);
         super.run();
-        LOGGER.info("Thread " + threadName + " finished");
+        LOGGER.info("Thread {} finished", threadName);
       }
     };
     thread.setUncaughtExceptionHandler((t, e) -> {
-      logger.error("Exception in " + t.getName(), e);
+      logger.error("Exception in {}", t.getName(), e);
     });
     thread.start();
   }
@@ -156,11 +171,68 @@ public class Utils {
     throw new SystemException("Cannot find param \"%s\" value", paramName);
   }
 
+  private static final Map<String, CachedEntity<?>> cachedObjects = new ConcurrentHashMap<>();
+
+  public static <T> T getCachedObject(String name, long lifeTime, Evaluatable<T> getter) {
+    // Сначала быстрая проверка: если объект есть и актуален, сразу возвращаем
+    CachedEntity<?> existingEntity = cachedObjects.get(name);
+    if (existingEntity != null && existingEntity.isFresh()) {
+      return (T) existingEntity.value;
+    }
+    // Если объект отсутствует или просрочен, используем compute(...)  для атомарного обновления в кэше
+    CachedEntity<?> newEntity = cachedObjects.compute(name, (key, oldEntity) -> {
+      // Если окажется, что другой поток уже обновил объект, и он актуален, возвращаем старый (новый) объект
+      if (oldEntity != null && oldEntity.isFresh()) {
+        return oldEntity;
+      }
+      // Иначе — вызываем getter, кладём результат в кэш
+      T newValue = getter.evaluate();
+      return newValue != null ? new CachedEntity<>(newValue, lifeTime) : null;
+    });
+
+    // Если newEntity == null, значит либо результат evaluate() был null, либо явно возвращён null в compute(...)
+    return newEntity == null ? null : (T) newEntity.value;
+
+    /*if (cachedObjects.containsKey(name)) {
+      CachedEntity<?> cachedEntity = cachedObjects.get(name);
+      if (cachedEntity.isFresh()) {
+        return (T) cachedEntity.value;
+      } else {
+        cachedObjects.remove(name);
+      }
+    }
+    T newValue = getter.evaluate();
+    if (newValue != null) {
+      cachedObjects.put(name, new CachedEntity<>(newValue, lifeTime));
+    }
+    return newValue;*/
+  }
+
   public static boolean hasParam(String[] params, String paramName) {
     for (String param : params) {
       if (param.equals(paramName))
         return true;
     }
     return false;
+  }
+
+  public interface Evaluatable<T> {
+    T evaluate();
+  }
+
+  private static class CachedEntity<T> {
+    long timestamp = -1L;
+    long lifeTime = 1000L;
+    T value = null;
+
+    public CachedEntity(T value, long lifeTime) {
+      this.value = value;
+      this.timestamp = DateUtils.currentTimeMillis();
+      this.lifeTime = lifeTime;
+    }
+
+    public boolean isFresh() {
+      return DateUtils.currentTimeMillis() - timestamp < lifeTime;
+    }
   }
 }

@@ -91,7 +91,6 @@ public class BinanceFuturesApiProvider {
 
   public static ExchangeInfoEntry getSymbolInfo(String pair) {
     try {
-      //todo сделать кеширование на диске, в бэктестинге не работает без инета
       Optional<ExchangeInfoEntry> symbolInfo = getExchangeInfo().getSymbols().
           stream().filter(exchangeInfoEntry -> pair.equals(exchangeInfoEntry.getSymbol())).findFirst();
       return symbolInfo.orElse(null);
@@ -103,7 +102,6 @@ public class BinanceFuturesApiProvider {
 
   public static synchronized Candle getLastPrice(String symbol) {
     try {
-      //todo кешировать хотя бы на секунду
       return Utils.executeInFewAttempts(() -> {
         List<Candle> klines = UnsignedClient.getKlines(symbol, IntervalType._1m, 1,
             DateUtils.currentTimeMillis() - 1000L * 60L);

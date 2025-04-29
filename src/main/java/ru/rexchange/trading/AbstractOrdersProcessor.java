@@ -7,11 +7,13 @@ import ru.rexchange.trading.trader.AbstractPositionContainer;
 import ru.rexchange.trading.trader.AbstractSignedClient;
 
 import javax.annotation.Nullable;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.util.UUID;
 
-public abstract class AbstractOrdersProcessor {
+public abstract class AbstractOrdersProcessor<O, C extends AbstractSignedClient> {
 
-  public AbstractPositionContainer placeOrder(AbstractSignedClient apiClient, float price, String pair, double amount, Integer leverage,
+  public AbstractPositionContainer<C> placeOrder(C apiClient, float price, String pair, double amount, Integer leverage,
                                               boolean buy, @Nullable Float stopLoss, @Nullable Float takeProfit) throws UserException {
     return placeOrder(apiClient, null, true, price, pair, amount, leverage, buy, stopLoss, takeProfit);
   }
@@ -21,25 +23,25 @@ public abstract class AbstractOrdersProcessor {
     return placeOrder(apiClient, price, pair, amount, null, buy, null, null);
   }*/
 
-  public abstract AbstractPositionContainer placeOrder(AbstractSignedClient apiClient, AbstractPositionContainer openPosition,
+  public abstract AbstractPositionContainer<C> placeOrder(C apiClient, AbstractPositionContainer<C> openPosition,
                                                        boolean limit, float price, String pair,
                                                        double amount, Integer leverage, boolean buy,
                                                        @Nullable Float stopLoss, @Nullable Float takeProfit) throws UserException;
-  public abstract AbstractPositionContainer placeMarketOrder(AbstractSignedClient aClient, AbstractPositionContainer openPosition,
+  public abstract AbstractPositionContainer<C> placeMarketOrder(C aClient, AbstractPositionContainer<C> openPosition,
                                                              String pair, double amount, Integer leverage,
                                                              boolean buy) throws UserException;
 
-  public abstract OrderInfoObject limitOrder(AbstractSignedClient apiClient, float price, String pair,
+  public abstract OrderInfoObject limitOrder(C apiClient, float price, String pair,
                                              double amount, boolean buy, Integer leverage) throws UserException;
 
-  public AbstractPositionContainer createPositionContainer(OrderInfoObject order) {
-    AbstractPositionContainer result = createEmptyPositionContainer();
+  public AbstractPositionContainer<C> createPositionContainer(OrderInfoObject order) {
+    AbstractPositionContainer<C> result = createEmptyPositionContainer();
     result.setPositionInfo(preparePositionInfo(order));
     result.addOrder(order);
     return result;
   }
 
-  public abstract AbstractPositionContainer createEmptyPositionContainer();
+  public abstract AbstractPositionContainer<C> createEmptyPositionContainer();
 
   //protected abstract AbstractPositionContainer createPositionContainer(Object customOrder);
 
@@ -70,15 +72,17 @@ public abstract class AbstractOrdersProcessor {
 
   //public abstract Integer getLeverage(Object client, String symbol);
 
-  public abstract OrderInfoObject queryOrder(AbstractSignedClient client, String symbol, String orderId) throws UserException;
+  public abstract OrderInfoObject queryOrder(C client, String symbol, String orderId) throws UserException;
 
-  public abstract OrderInfoObject convertOrder(Object customOrder, String positionId);
+  public abstract OrderInfoObject convertOrder(O customOrder, String positionId);
 
   protected int getLimitOrderShiftInTicks() {
     return 2;
   }
 
-  public abstract boolean cancelOrder(AbstractSignedClient apiClient, OrderInfoObject order);
+  public abstract boolean cancelOrder(C apiClient, OrderInfoObject order);
 
   public abstract float getLastPrice(String symbol) throws Exception;
+
+  public abstract O updateOrder(C apiAccess, OrderInfoObject order) throws SocketException, UnknownHostException;
 }

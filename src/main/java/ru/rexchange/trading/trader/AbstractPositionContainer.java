@@ -19,7 +19,7 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.*;
 
-public abstract class AbstractPositionContainer {
+public abstract class AbstractPositionContainer<C extends AbstractSignedClient> {
   protected static Logger LOGGER = LoggerFactory.getLogger(AbstractPositionContainer.class);
   protected static final List<String> NOT_ACTUAL_ORDER_STATUSES = Arrays.asList(
       OrderInfoObject.OrderStatus.CANCELED, OrderInfoObject.OrderStatus.EXPIRED);
@@ -52,14 +52,14 @@ public abstract class AbstractPositionContainer {
     }
   }
 
-  public abstract int update(AbstractSignedClient apiAccess) throws UnknownHostException, SocketException;
+  public abstract int update(C apiAccess) /*throws UnknownHostException, SocketException*/;
 
-  public abstract int cancel(AbstractSignedClient apiAccess);
+  public abstract int cancel(C apiAccess);
 
-  protected abstract AbstractOrdersProcessor getOrdersProcessor();
+  protected abstract AbstractOrdersProcessor<?, C> getOrdersProcessor();
 
-  public abstract OrderInfoObject closeDeal(AbstractSignedClient apiAccess);
-  public abstract OrderInfoObject closePartially(AbstractSignedClient apiAccess, BigDecimal amount);
+  public abstract OrderInfoObject closeDeal(C apiAccess);
+  public abstract OrderInfoObject closePartially(C apiAccess, BigDecimal amount);
 
   protected void updatePositionStatus() {
     if (PositionInfoObject.PositionStatus.NEW.name().equals(getPositionInfo().getStatus())) {
@@ -71,11 +71,11 @@ public abstract class AbstractPositionContainer {
     getAvgPrice(true);
   }
 
-  public abstract boolean cancelSafetyOrders(AbstractSignedClient apiAccess);
-  public abstract boolean rearrangeTakeProfit(AbstractSignedClient apiAccess, BigDecimal newTp);
-  public abstract Object rearrangeStopLoss(AbstractSignedClient apiAccess, BigDecimal newSl);
-  @Deprecated
-  public abstract OrderInfoObject getBaseOrder();
+  public abstract boolean cancelSafetyOrders(C apiAccess);
+  public abstract boolean rearrangeTakeProfit(C apiAccess, BigDecimal newTp);
+  public abstract Object rearrangeStopLoss(C apiAccess, BigDecimal newSl);
+//  @Deprecated
+//  public abstract OrderInfoObject getBaseOrder();
 
   public OrderInfoObject getFirstOrder() {
     if (!getOrders().isEmpty())
@@ -144,7 +144,7 @@ public abstract class AbstractPositionContainer {
         if (posAmount.equals(BigDecimal.ZERO)) {
           LOGGER.info("{}. Orders are not filled yet",
               getPositionInfo() == null ? "Unknown" : getPositionInfo().getPositionId());
-          return orders.isEmpty() ? BigDecimal.ZERO : BigDecimal.valueOf(getBaseOrder().getPrice());
+          return orders.isEmpty() ? BigDecimal.ZERO : BigDecimal.valueOf(getFirstOrder().getPrice());
         }
 
         BigDecimal result = posValue.divide(posAmount, MathContext.DECIMAL32);
@@ -161,7 +161,7 @@ public abstract class AbstractPositionContainer {
   }
 
   public String getSide() {
-    return getPositionInfo() == null ? getBaseOrder().getDirection() : getPositionInfo().getDirection();
+    return getPositionInfo() == null ? getFirstOrder().getDirection() : getPositionInfo().getDirection();
   }
 
   public Object setParameter(String name, Object value) {
@@ -187,11 +187,10 @@ public abstract class AbstractPositionContainer {
   protected void updatePositionInfo() {
     double posAmount = 0.f, posValue = 0.f;
     for (OrderInfoObject o : getOrders()) {
-      if (!OrderInfoObject.OrderStatus.FILLED.equals(o.getStatus()))
-        continue;
       int coDirectional = o.getDirection().equals(getSide()) ? 1 : -1;
       posAmount += (o.getAmount() * coDirectional);
-      posValue += (o.getAmount() * o.getPrice() * coDirectional);
+      if (OrderInfoObject.OrderStatus.FILLED.equals(o.getStatus()))
+        posValue += (o.getAmount() * o.getPrice() * coDirectional);
     }
     if (getPositionInfo() != null) {
       getPositionInfo().setAveragePrice((float) (posValue / posAmount));
