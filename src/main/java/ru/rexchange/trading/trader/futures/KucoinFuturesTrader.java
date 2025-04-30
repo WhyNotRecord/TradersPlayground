@@ -5,7 +5,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.rexchange.apis.kucoin.KucoinFuturesApiProvider;
 import ru.rexchange.apis.kucoin.KucoinOrdersProcessor;
 import ru.rexchange.data.Consts;
 import ru.rexchange.gen.PositionInfo;
@@ -42,13 +41,13 @@ public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient>
   @Override
   public void requestCurrenciesAmount() {
     try {
-      if (baseCurrency != null) {//todo При открытии сделок вычитать
-        baseCurrencyAmount = KucoinFuturesApiProvider.getFreeAssetBalance(baseCurrency, getSignedClient()).floatValue();
-        baseCurrencyTotalAmount = KucoinFuturesApiProvider.getTotalAssetBalance(baseCurrency, getSignedClient()).floatValue();
+      if (baseCurrency != null) {
+        baseCurrencyAmount = KucoinSignedClient.getFreeAssetBalance(baseCurrency, getSignedClient()).floatValue();
+        baseCurrencyTotalAmount = KucoinSignedClient.getTotalAssetBalance(baseCurrency, getSignedClient()).floatValue();
       }
       if (quotedCurrency != null) {
-        quotedCurrencyAmount = KucoinFuturesApiProvider.getFreeAssetBalance(quotedCurrency, getSignedClient()).floatValue();
-        quotedCurrencyTotalAmount = KucoinFuturesApiProvider.getTotalAssetBalance(quotedCurrency, getSignedClient()).floatValue();
+        quotedCurrencyAmount = KucoinSignedClient.getFreeAssetBalance(quotedCurrency, getSignedClient()).floatValue();
+        quotedCurrencyTotalAmount = KucoinSignedClient.getTotalAssetBalance(quotedCurrency, getSignedClient()).floatValue();
       }
     } catch (Exception e) {
       getLogger().warn("Error occurred while requesting free balance", e);
@@ -61,7 +60,7 @@ public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient>
 
   protected boolean canTrade() {
     try {
-      return KucoinFuturesApiProvider.canTrade(getSignedClient());
+      return getSignedClient().canTrade();
     } catch (Exception e) {
       getLogger().warn("Unsuccessful API request", e);
       return true;
@@ -74,7 +73,8 @@ public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient>
     //если result == null, значит ничего не менялось
     if (result != null && baseCurrency != null) {
       try {
-        //todo в момент первоначального конфига данных о торгуемой паре ещё нет, так что leverage не передать на биржу
+        // в момент задания параметров при первоначальном конфиге данных о торгуемой паре ещё нет,
+        // так что leverage не передать на биржу
         // пара проставляется в момент привязки трейдера к боту
         KucoinOrdersProcessor.setLeverage(getSignedClient(), getSymbol(), leverage);
       } catch (Exception e) {
@@ -131,7 +131,7 @@ public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient>
       }
       return result.toString();
     } catch (Exception e) {
-      getLogger().warn("Error occurred while trying to load last orders for pair " + symbol, e);
+      getLogger().warn("Error occurred while trying to load last orders for pair {}", symbol, e);
       return null;
     }
   }
@@ -153,7 +153,7 @@ public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient>
       }
       return result.toString();
     } catch (Exception e) {
-      getLogger().warn("Error occurred while trying to load active orders for pair " + symbol, e);
+      getLogger().warn("Error occurred while trying to load active orders for pair {}", symbol, e);
       return null;
     }
   }
@@ -166,13 +166,14 @@ public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient>
   @Override
   public String setParameter(String name, String value) {
     String parameterSet = super.setParameter(name, value);
-    if (parameterSet == null);//todo здесь будут задаваться кастомные параметры
+    if (parameterSet == null);
+    //здесь будут задаваться кастомные параметры
 
     return parameterSet;
   }
 
   @Override
-  protected String findLastOpenedOrder(boolean buy, AbstractOrdersProcessor processor) {
+  protected String findLastOpenedOrder(boolean buy, AbstractOrdersProcessor<?, KucoinSignedClient> processor) {
     try {
       List<OrderResponse> orders = getSignedClient().getFilledOrders(getSymbol());
       orders.sort((o1, o2) -> -o1.getOrderTime().compareTo(o2.getOrderTime()));
@@ -214,7 +215,7 @@ public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient>
   }
 
   @NotNull
-  protected AbstractPositionContainer createCustomPositionContainer(PositionInfo positionInfo) {
+  protected KucoinOrdersProcessor.PositionContainer createCustomPositionContainer(PositionInfo positionInfo) {
     return new KucoinOrdersProcessor.PositionContainer(positionInfo);
   }
 
@@ -227,15 +228,19 @@ public class KucoinFuturesTrader extends CommonFuturesTrader<KucoinSignedClient>
   }
 
   @Override
-  protected void finishPosition(AbstractPositionContainer position, Long closeTime, String initiator) {
+  protected void finishPosition(AbstractPositionContainer<KucoinSignedClient> position, Long closeTime, String initiator) {
     super.finishPosition(position, closeTime, initiator);
     if (STOP_LOSS_PARAM.equals(initiator)) {
-      if (!getOrdersProcessor().cancelOrder(getSignedClient(), position.getTakeProfitOrder())) {
-        getLogger().warn("Unsuccessful SL cancellation for position " + position.getPositionInfo().getPositionId());
+      if (position.getTakeProfitOrder() != null) {
+        if (!getOrdersProcessor().cancelOrder(getSignedClient(), position.getTakeProfitOrder().getOrderId())) {
+          getLogger().warn("Unsuccessful TP cancellation for position {}", position.getPositionInfo().getPositionId());
+        }
       }
     } else if (TAKE_PROFIT_PARAM.equals(initiator)) {
-      if (!getOrdersProcessor().cancelOrder(getSignedClient(), position.getStopLossOrder())) {
-        getLogger().warn("Unsuccessful TP cancellation for position " + position.getPositionInfo().getPositionId());
+      if (position.getStopLossOrder() != null) {
+        if (!getOrdersProcessor().cancelOrder(getSignedClient(), position.getStopLossOrder().getOrderId())) {
+          getLogger().warn("Unsuccessful SL cancellation for position {}", position.getPositionInfo().getPositionId());
+        }
       }
     }
   }

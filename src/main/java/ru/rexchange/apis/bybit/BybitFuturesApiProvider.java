@@ -6,7 +6,7 @@ import com.bybit.api.client.domain.market.request.MarketDataRequest;
 import com.bybit.api.client.restApi.BybitApiMarketRestClient;
 import com.bybit.api.client.service.BybitApiClientFactory;
 import ru.rexchange.exception.SystemException;
-import ru.rexchange.trading.trader.BybitSignedClient;
+import ru.rexchange.trading.trader.futures.BybitSymbolInfo;
 
 import java.util.Collections;
 import java.util.List;
@@ -16,9 +16,18 @@ import java.util.Objects;
 //Здесь будут собраны методы для обращения к API биржи, не требующие авторизации (ключа API)
 public class BybitFuturesApiProvider {
   private static BybitApiMarketRestClient client = null;
-  public static boolean canTrade(BybitSignedClient client) throws Exception {
-    return client.canTrade();
+  private static BybitApiMarketRestClient getPublicMarketClient() {
+    if (client == null) {
+      BybitApiClientFactory factory =
+          BybitApiClientFactory.newInstance(BybitApiConfig.MAINNET_DOMAIN);
+      client = factory.newMarketDataRestClient();
+    }
+    return client;
   }
+
+  /*public static boolean canTrade(BybitSignedClient client) throws Exception {
+    return client.canTrade();
+  }*/
 
   public static Float getLastPrice(String symbol) {
     MarketDataRequest request = MarketDataRequest.builder().category(CategoryType.LINEAR).symbol(symbol).build();
@@ -32,33 +41,12 @@ public class BybitFuturesApiProvider {
   /**
    * Метод для получения параметров торговли вроде tickSize, минимальный и максимальный размер ордера и т. д.
    * @param symbol - символ торговой пары
-   * @return словарь с ключами: symbol, priceScale, priceFilter (словарь; внутри minPrice, maxPrice, tickSize),
-   * lotSizeFilter (словарь; внутри minNotionalValue, maxOrderQty, maxMktOrderQty, minOrderQty, qtyStep),
-   * leverageFilter(словарь; внутри minLeverage, maxLeverage, leverageStep), copyTrading
-
-   * Пример:
-   * {symbol=KASUSDT, contractType=LinearPerpetual, status=Trading, baseCoin=KAS, quoteCoin=USDT,
-   * launchTime=1691138081000, deliveryTime=0, deliveryFeeRate=, priceScale=5,
-   * leverageFilter={minLeverage=1, maxLeverage=50.00, leverageStep=0.01},
-   * priceFilter={minPrice=0.00001, maxPrice=199.99998, tickSize=0.00001},
-   * lotSizeFilter={maxOrderQty=4616000, minOrderQty=10, qtyStep=10, maxMktOrderQty=774000, minNotionalValue=5},
-   * unifiedMarginTrade=true, fundingInterval=240, settleCoin=USDT, copyTrading=both,
-   * upperFundingRate=0.01, lowerFundingRate=-0.01, riskParameters={priceLimitRatioX=0.15, priceLimitRatioY=0.3}}
    */
-  public static Map<String, Object> getInstrumentInfo(String symbol) {
+  public static BybitSymbolInfo getInstrumentInfo(String symbol) {
     MarketDataRequest request = MarketDataRequest.builder().category(CategoryType.LINEAR).symbol(symbol).build();
     Map<String, Object> response = checkResponse(getPublicMarketClient().getInstrumentsInfo(request));
     List<Map<String, Object>> list = extractList(response);
-    return list.isEmpty() ? null : list.get(0);
-  }
-
-  private static BybitApiMarketRestClient getPublicMarketClient() {
-    if (client == null) {
-      BybitApiClientFactory factory =
-          BybitApiClientFactory.newInstance(BybitApiConfig.MAINNET_DOMAIN);
-      client = factory.newMarketDataRestClient();
-    }
-    return client;
+    return list.isEmpty() ? null : new BybitSymbolInfo(list.get(0));
   }
 
   public static Map<String, Object> checkResponse(Object response) {
@@ -78,7 +66,7 @@ public class BybitFuturesApiProvider {
 
   public static void main(String[] args) {
     String symbol = "KASUSDT";
-    Map<String, Object> info = getInstrumentInfo(symbol);
+    BybitSymbolInfo info = getInstrumentInfo(symbol);
     System.out.println(info);
     System.out.println(getLastPrice(symbol));
   }

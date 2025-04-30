@@ -80,9 +80,16 @@ public abstract class AbstractOrdersProcessor<O, C extends AbstractSignedClient>
     return 2;
   }
 
-  public abstract boolean cancelOrder(C apiClient, OrderInfoObject order);
+  /*@Deprecated
+  public abstract boolean cancelOrder(C apiClient, OrderInfoObject order);*/
+
+  public abstract boolean cancelOrder(C apiClient, String orderId);
 
   public abstract float getLastPrice(String symbol) throws Exception;
 
   public abstract O updateOrder(C apiAccess, OrderInfoObject order) throws SocketException, UnknownHostException;
+
+  protected static long getDefaultAttemptPause() {
+    return 1000L;
+  }
 }

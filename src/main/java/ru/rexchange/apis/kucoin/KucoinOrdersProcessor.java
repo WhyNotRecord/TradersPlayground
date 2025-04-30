@@ -513,6 +513,13 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
     return priceData.getPrice().floatValue();
   }
 
+  private static boolean orderIsFilled(OrderResponse order) {
+    LOGGER.trace("Is filled? {}", order.toString());
+    return (order.getStop() == null && KucoinSignedClient.OrderStatus.DONE.equals(order.getStatus())) ||
+        Boolean.TRUE.equals(order.getStopTriggered()) || order.getFilledSize().compareTo(BigDecimal.ZERO) > 0;
+  }
+
+  @Deprecated
   protected boolean cancelOrder(KucoinSignedClient apiClient, OrderResponse order) {
     if (order == null) {
       LOGGER.warn("Attempt to close non-existing order");
@@ -541,16 +548,29 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
     }
   }
 
-  private static boolean orderIsFilled(OrderResponse order) {
-    LOGGER.trace("Is filled? {}", order.toString());
-    return (order.getStop() == null && KucoinSignedClient.OrderStatus.DONE.equals(order.getStatus())) ||
-        Boolean.TRUE.equals(order.getStopTriggered()) || order.getFilledSize().compareTo(BigDecimal.ZERO) > 0;
+  public boolean cancelOrder(KucoinSignedClient apiClient, String orderId) {
+    if (orderId == null) {
+      LOGGER.warn("No orderId provided");
+      return false;
+    }
+    LOGGER.debug("Cancelling order {}", orderId);
+    if (testOrders) {
+      /*LOGGER.debug("Test order on {} cancelled: amount - {} price - {}",
+          order.getSymbol(), order.getAmount(), order.getPrice());
+      order.setStatus(OrderInfoObject.OrderStatus.CANCELED);*/
+      //todo обновлять статус выше по стеку
+      return true;
+    }
+    try {
+      return Utils.executeInFewAttempts(() -> apiClient.cancelOrder(null, null, orderId),
+          3, getDefaultAttemptPause());
+    } catch (Exception e) {
+      LOGGER.error("Failed to cancelorder {}", orderId, e);
+      return false;
+    }
   }
 
-  /*public boolean cancelOrder(KucoinSignedClient apiClient, OrderInfoObject order) {
-    return cancelOrder((KucoinSignedClient) apiClient, order);
-  }*/
-
+  @Deprecated
   public boolean cancelOrder(KucoinSignedClient apiClient, OrderInfoObject order) {
     if (order == null) {
       LOGGER.warn("Attempt to close non-existing order");
@@ -612,10 +632,6 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
       LOGGER.error("Update order {} failed", order.getOrderId());
       throw new SystemException(e);
     }
-  }
-
-  private static long getDefaultAttemptPause() {
-    return 1000L;
   }
 
   public static OrderResponse createTestOrder(String pair, BigDecimal quantity, BigDecimal price, String orderSide,
@@ -781,10 +797,14 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
           return null;
         }
 
-        if (!getOrdersProcessor().cancelOrder(apiAccess, takeProfitOrder))
-          LOGGER.warn("Unsuccessful take-profit order cancelling");
-        if (!getOrdersProcessor().cancelOrder(apiAccess, stopLossOrder))
-          LOGGER.warn("Unsuccessful stop-loss order cancelling");
+        if (takeProfitOrder != null) {
+          if (!getOrdersProcessor().cancelOrder(apiAccess, takeProfitOrder.getOrderId()))
+            LOGGER.warn("Unsuccessful take-profit order cancelling");
+        }
+        if (stopLossOrder != null) {
+          if (!getOrdersProcessor().cancelOrder(apiAccess, stopLossOrder.getOrderId()))
+            LOGGER.warn("Unsuccessful stop-loss order cancelling");
+        }
 
         result = getOrdersProcessor().closeDeal(apiAccess,
               getPositionInfo().getSymbol(), getExecutedAmount(),
@@ -862,17 +882,21 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
 
       if (position != null)
         LOGGER.debug("Cancelling position container with id = {}", position.getPositionId());
-      boolean slCancelled = getOrdersProcessor().cancelOrder(apiAccess, getStopLossOrder());
-      if (slCancelled)
-        result++;
-      boolean tpCancelled = getOrdersProcessor().cancelOrder(apiAccess, getTakeProfitOrder());
-      if (tpCancelled)
-        result++;
+
+      if (getStopLossOrder() != null) {
+        if (getOrdersProcessor().cancelOrder(apiAccess, getStopLossOrder().getOrderId()))
+          result++;
+      }
+      if (getTakeProfitOrder() != null) {
+        if (getOrdersProcessor().cancelOrder(apiAccess, getTakeProfitOrder().getOrderId()))
+          result++;
+      }
 
       for (OrderInfoObject order : orders) {
-        boolean mainCancelled = getOrdersProcessor().cancelOrder(apiAccess, order);
-        if (mainCancelled)
-          result++;
+        if (order != null) {
+          if (getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId()))
+            result++;
+        }
       }
 
       return result;
@@ -885,7 +909,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
       boolean result = true;
       for (OrderInfoObject order : new ArrayList<>(orders)) {
         if (!OrderInfoObject.OrderStatus.FILLED.equals(order.getStatus())) {
-          boolean safetyCancelled = getOrdersProcessor().cancelOrder(apiAccess, order);
+          boolean safetyCancelled = getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId());
           if (!safetyCancelled) {
             result = false;
           } else {

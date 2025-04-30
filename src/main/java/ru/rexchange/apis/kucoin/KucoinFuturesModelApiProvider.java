@@ -20,7 +20,6 @@ public class KucoinFuturesModelApiProvider {
   private static KucoinFuturesRestClient apiClient = null;
   private static KucoinFuturesPublicWSClient apiWsClient = null;
 
-  //TODO переделать на websocket
   protected static KucoinFuturesRestClient getClient() {
     if (apiClient == null) {
       KucoinFuturesClientBuilder builder = new KucoinFuturesClientBuilder().withBaseUrl(KUCOIN_FUTURES_API_URL);
@@ -43,12 +42,12 @@ public class KucoinFuturesModelApiProvider {
       TickerResponse result = getClient().tickerAPI().getTicker(symbol);
       return result.getPrice().doubleValue();
     } catch (Exception e) {
-      LOGGER.error(String.format("Pair %s price request error", symbol), e);
+      LOGGER.error("Pair {} price request error", symbol, e);
       return null;
     }
   }
 
-  //TODO продумать механизм синхронизации, чтобы не быть забаненым за активный DDOS API
+  //todo продумать механизм синхронизации, чтобы не быть забаненым за активный DDOS API
   public static List<String> getLastCandle(String[] pair, int period) throws Exception {
     String symbol = evaluateSymbol(pair);
     long now = TimeUtils.getCurrentPeriodStart(period * 60 * 1000L);

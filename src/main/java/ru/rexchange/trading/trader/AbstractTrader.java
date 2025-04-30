@@ -606,7 +606,6 @@ public abstract class AbstractTrader {
 			return parameters != null && parameters.containsKey(name);
 		}
 
-		//TODO доработать функционал, чтобы можно было вычислять значения только при необходимости (если к ним обращаются)
 		public Object getParameter(String name) {
 			if (hasParameter(name))
 				return parameters.get(name);

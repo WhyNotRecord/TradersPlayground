@@ -14,22 +14,27 @@ import org.slf4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import ru.rexchange.apis.kucoin.KucoinFuturesApiProvider;
 import ru.rexchange.apis.kucoin.KucoinOrdersProcessor;
+import ru.rexchange.tools.DateUtils;
 import ru.rexchange.tools.StringUtils;
 import ru.rexchange.tools.Utils;
 import ru.rexchange.trading.TraderAuthenticator;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 public class KucoinSignedClient extends AbstractSignedClient {
+  public static final long BALANCE_INFO_CACHE_LIVE_TIME = 15 * 1000L;
   private static final Logger LOGGER = LoggerFactory.getLogger(KucoinSignedClient.class);
   //private static final long POSITION_MODE_CACHE_LIVE_PERIOD = 30 * 1000L;
   public static final int REQUEST_ATTEMPTS_COUNT = 3;
   public static final long FAILED_REQUEST_REPEAT_PAUSE = 500L;
   public static final String CROSS_MARGIN_MODE = "CROSS";
+  private static final Map<String, BalanceInfo> balanceInfoCache = new HashMap<>();
   private final String authId;
   private KucoinFuturesRestClient kucoinFuturesRestApiClient = null;
 
@@ -38,6 +43,25 @@ public class KucoinSignedClient extends AbstractSignedClient {
         withApiKey(auth.getPublicKey(), auth.getPrivateKey(), auth.getPersonalKey());
     kucoinFuturesRestApiClient = builder.buildRestClient();
     this.authId = auth.toString();
+  }
+
+  private static synchronized AccountOverviewResponse getCachedBalance(String currency, KucoinSignedClient client) throws Exception {
+    String key = client.toString() + currency;
+    if (!balanceInfoCache.containsKey(key) ||
+        balanceInfoCache.get(key).getTimestamp() + BALANCE_INFO_CACHE_LIVE_TIME < DateUtils.currentTimeMillis()) {
+      balanceInfoCache.put(key, new BalanceInfo(client.getBalance(currency)));
+    }
+    return balanceInfoCache.get(key).getBalance();
+  }
+
+  public static BigDecimal getFreeAssetBalance(String currency, KucoinSignedClient client) throws Exception {
+    AccountOverviewResponse response = getCachedBalance(currency, client);
+    return response.getAvailableBalance();
+  }
+
+  public static BigDecimal getTotalAssetBalance(String currency, KucoinSignedClient client) throws Exception {
+    AccountOverviewResponse response = getCachedBalance(currency, client);
+    return response.getMarginBalance();
   }
 
   @Override
@@ -201,4 +225,20 @@ public class KucoinSignedClient extends AbstractSignedClient {
     String DONE = "done";
   }
 
+  private static class BalanceInfo {
+    private final AccountOverviewResponse balance;
+    private final long timestamp;
+    public BalanceInfo(AccountOverviewResponse balance) {
+      this.balance = balance;
+      this.timestamp = DateUtils.currentTimeMillis();
+    }
+
+    public AccountOverviewResponse getBalance() {
+      return balance;
+    }
+
+    public long getTimestamp() {
+      return timestamp;
+    }
+  }
 }

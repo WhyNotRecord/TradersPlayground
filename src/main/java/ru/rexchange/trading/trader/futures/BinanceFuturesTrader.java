@@ -12,7 +12,6 @@ import ru.rexchange.gen.PositionInfo;
 import ru.rexchange.gen.TraderConfig;
 import ru.rexchange.trading.AbstractOrdersProcessor;
 import ru.rexchange.trading.TraderAuthenticator;
-import ru.rexchange.trading.trader.AbstractPositionContainer;
 import ru.rexchange.trading.trader.BinanceSignedClient;
 
 import java.util.List;
@@ -87,7 +86,8 @@ public class BinanceFuturesTrader extends CommonFuturesTrader<BinanceSignedClien
     //если result == null, значит ничего не менялось
     if (result != null && baseCurrency != null) {
       try {
-        //todo в момент первоначального конфига данных о торгуемой паре ещё нет, так что leverage не передать на биржу
+        // в момент задания параметров при первоначальном конфиге данных о торгуемой паре ещё нет,
+        // так что leverage не передать на биржу
         // пара проставляется в момент привязки трейдера к боту
         BinanceOrdersProcessor.setLeverage(getSignedClient(), getSymbol(), leverage);
       } catch (Exception e) {
@@ -144,7 +144,7 @@ public class BinanceFuturesTrader extends CommonFuturesTrader<BinanceSignedClien
       }
       return result.toString();
     } catch (Exception e) {
-      getLogger().warn("Error occurred while trying to load last orders for pair " + symbol, e);
+      getLogger().warn("Error occurred while trying to load last orders for pair {}", symbol, e);
       return null;
     }
   }
@@ -189,13 +189,14 @@ public class BinanceFuturesTrader extends CommonFuturesTrader<BinanceSignedClien
   @Override
   public String setParameter(String name, String value) {
     String parameterSet = super.setParameter(name, value);
-    if (parameterSet == null);//todo здесь будут задаваться кастомные параметры
+    if (parameterSet == null);
+    //здесь будут задаваться кастомные параметры
 
     return parameterSet;
   }
 
   @Override
-  protected String findLastOpenedOrder(boolean buy, AbstractOrdersProcessor processor) {
+  protected String findLastOpenedOrder(boolean buy, AbstractOrdersProcessor<?, BinanceSignedClient> processor) {
     try {
       List<Order> orders = getSignedClient().getFilledOrders(getSymbol());
       orders.sort((o1, o2) -> -o1.getUpdateTime().compareTo(o2.getUpdateTime()));
@@ -237,7 +238,7 @@ public class BinanceFuturesTrader extends CommonFuturesTrader<BinanceSignedClien
   }
 
   @NotNull
-  protected AbstractPositionContainer createCustomPositionContainer(PositionInfo positionInfo) {
+  protected BinanceOrdersProcessor.PositionContainer createCustomPositionContainer(PositionInfo positionInfo) {
     return new BinanceOrdersProcessor.PositionContainer(positionInfo);
   }
 

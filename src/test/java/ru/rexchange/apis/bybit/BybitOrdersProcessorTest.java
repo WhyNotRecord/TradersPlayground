@@ -4,7 +4,6 @@ import com.bybit.api.client.domain.position.PositionMode;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import ru.rexchange.data.storage.AbstractRate;
 import ru.rexchange.gen.OrderInfoObject;
 import ru.rexchange.test.TestTools;
 import ru.rexchange.trading.TraderAuthenticator;
