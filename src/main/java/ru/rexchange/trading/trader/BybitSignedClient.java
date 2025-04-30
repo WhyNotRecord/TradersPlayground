@@ -47,7 +47,7 @@ public class BybitSignedClient extends AbstractSignedClient {
 
   public boolean canTrade() throws Exception {
     synchronized(lock) {
-      return true;
+      return true;//todo
     }
   }
 
@@ -85,7 +85,7 @@ public class BybitSignedClient extends AbstractSignedClient {
     }
   }
 
-  public Object getBalance(String currency) throws Exception {
+  public Map<String, Object> getBalance(String currency) throws Exception {
     AccountDataRequest req = AccountDataRequest.builder().coins(currency).accountType(AccountType.UNIFIED).window("10000").build();
     synchronized(lock) {
       Map<String, Object> response = BybitFuturesApiProvider.checkResponse(aClient.getWalletBalance(req));
@@ -99,12 +99,27 @@ public class BybitSignedClient extends AbstractSignedClient {
     }
   }*/
 
-  public Object getOrders(boolean openOnly, String symbol) throws Exception {
-    TradeOrderRequest request = TradeOrderRequest.builder().category(CategoryType.LINEAR).symbol(symbol).build();
-    //todo openOnly
+  /**
+   * Возвращает список сведений ордеров
+   * @param openOnly: 0 - только активные, 1 - только неактивные, 2 - все
+   */
+  private List<Map<String, Object>> getOrders(int openOnly, String symbol) throws Exception {
+    TradeOrderRequest request = TradeOrderRequest.builder().category(CategoryType.LINEAR).symbol(symbol).
+        openOnly(openOnly).build();
     synchronized(lock) {
-      return client.getOpenOrders(request);
+      Map<String, Object> response = BybitFuturesApiProvider.checkResponse(client.getOpenOrders(request));
+      return BybitFuturesApiProvider.extractList(response);
     }
+  }
+
+  /**
+   * Возвращает список сведений ордеров
+   * @param openOnly: true - только активные, false - только неактивные, null - все
+   */
+  public List<Map<String, Object>> getOrders(Boolean openOnly, String symbol) throws Exception {
+    if (openOnly == null)
+      return getOrders(2, symbol);
+    return getOrders(openOnly ? 0 : 1, symbol);
   }
 
   /*public List<Order> getOpenOrders() throws Exception {
@@ -113,14 +128,14 @@ public class BybitSignedClient extends AbstractSignedClient {
     }
   }*/
 
-  public String setLeverage(String pair, Integer leverage) throws Exception {
+  public boolean setLeverage(String pair, Integer leverage) throws Exception {
     String leverageParam = String.valueOf(leverage);
     PositionDataRequest request = PositionDataRequest.builder().
         category(CategoryType.LINEAR).symbol(pair).buyLeverage(leverageParam).sellLeverage(leverageParam).build();
     synchronized(lock) {
       Object response = pClient.setPositionLeverage(request);
-      System.out.println(response);
-      return response.toString();//todo
+      Map<String, Object> result = BybitFuturesApiProvider.checkResponse(response);
+      return true;
     }
   }
 

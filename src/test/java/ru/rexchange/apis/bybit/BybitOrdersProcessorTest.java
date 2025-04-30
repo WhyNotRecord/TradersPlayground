@@ -94,14 +94,11 @@ public class BybitOrdersProcessorTest {
     TestTools.prepareEnvironment();
     BybitSignedClient apiClient = getSignedClient();
     String symbol = "ETHUSDT";
-    AbstractRate<Float> candle = (AbstractRate<Float>) BybitFuturesApiProvider.getLastPrice(symbol);
-    float price = 0.f;
-    if (candle != null) {
-      price = candle.getValue();
-    }
-    BybitOrdersProcessor.PositionContainer result = (BybitOrdersProcessor.PositionContainer)
+    Float price = BybitFuturesApiProvider.getLastPrice(symbol);
+    Assertions.assertNotNull(price);
+    BybitOrdersProcessor.PositionContainer result =
         BybitOrdersProcessor.getInstance(true).placeOrder(apiClient, null, false, price,
-            symbol, 0.02f, 5, true, price * 0.97f, price * 1.04f);
+        symbol, 0.02f, 5, true, price * 0.97f, price * 1.04f);
     Assertions.assertNotNull(result);
     OrderInfoObject closeDeal = result.closeDeal(apiClient);
     Assertions.assertNotNull(closeDeal);

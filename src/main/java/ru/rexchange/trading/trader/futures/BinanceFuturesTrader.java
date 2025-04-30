@@ -6,7 +6,6 @@ import binance.futures.model.Order;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.rexchange.apis.binance.BinanceFuturesApiProvider;
 import ru.rexchange.apis.binance.BinanceOrdersProcessor;
 import ru.rexchange.data.Consts;
 import ru.rexchange.gen.PositionInfo;
@@ -44,14 +43,14 @@ public class BinanceFuturesTrader extends CommonFuturesTrader<BinanceSignedClien
   public void requestCurrenciesAmount() {
     try {
       if (baseCurrency != null) {//todo При открытии сделок вычитать
-        AccountBalance baseAssetBalance = BinanceFuturesApiProvider.getAssetBalance(baseCurrency, getSignedClient());
+        AccountBalance baseAssetBalance = BinanceSignedClient.getAssetBalance(baseCurrency, getSignedClient());
         if (baseAssetBalance != null) {
           baseCurrencyAmount = baseAssetBalance.getAvailableBalance().floatValue();
           baseCurrencyTotalAmount = baseAssetBalance.getBalance().floatValue();
         }
       }
       if (quotedCurrency != null) {
-        AccountBalance quotedAssetBalance = BinanceFuturesApiProvider.getAssetBalance(quotedCurrency, getSignedClient());
+        AccountBalance quotedAssetBalance = BinanceSignedClient.getAssetBalance(quotedCurrency, getSignedClient());
         if (quotedAssetBalance != null) {
           quotedCurrencyAmount = quotedAssetBalance.getAvailableBalance().floatValue();
           quotedCurrencyTotalAmount = quotedAssetBalance.getBalance().floatValue();
@@ -68,7 +67,7 @@ public class BinanceFuturesTrader extends CommonFuturesTrader<BinanceSignedClien
 
   protected boolean canTrade() {
     try {
-      return BinanceFuturesApiProvider.canTrade(getSignedClient());
+      return getSignedClient().canTrade();
     } catch (Exception e) {
       getLogger().warn("Unsuccessful API request", e);
       return true;
@@ -182,7 +181,7 @@ public class BinanceFuturesTrader extends CommonFuturesTrader<BinanceSignedClien
     try {
       return PositionMode.HEDGE.equals(getSignedClient().getPositionMode());
     } catch (Exception e) {
-      LOGGER.warn("Error occurred trying to find out position mode for trader " + this, e);
+      LOGGER.warn("Error occurred trying to find out position mode for trader {}", this, e);
       return false;
     }
   }

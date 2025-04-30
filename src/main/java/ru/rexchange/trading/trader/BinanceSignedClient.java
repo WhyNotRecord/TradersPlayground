@@ -10,10 +10,13 @@ import ru.rexchange.trading.TraderAuthenticator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class BinanceSignedClient extends AbstractSignedClient {
+  public static final long BALANCE_INFO_CACHE_LIVE_TIME = 15 * 1000L;
   private static final long POSITION_MODE_CACHE_LIVE_PERIOD = 30 * 1000L;
   private static final Object lock = new Object();
+  private static final Map<String, BalanceInfo> balanceInfoCache = new HashMap<>();
   private final String authId;
   private final SignedClient client;
   private static final Map<String, PositionMode> positionModesCache = new HashMap<>();
@@ -22,6 +25,22 @@ public class BinanceSignedClient extends AbstractSignedClient {
   public BinanceSignedClient(TraderAuthenticator auth) {
     client = new SignedClient(auth.getPublicKey(), auth.getPrivateKey());
     this.authId = auth.toString();
+  }
+
+  //todo для чего тут static?
+  private static synchronized List<AccountBalance> getBalances(BinanceSignedClient client) throws Exception {
+    if (!balanceInfoCache.containsKey(client.toString()) ||
+        balanceInfoCache.get(client.toString()).getTimestamp() + BALANCE_INFO_CACHE_LIVE_TIME < DateUtils.currentTimeMillis()) {
+      balanceInfoCache.put(client.toString(), new BalanceInfo(client.getBalance()));
+    }
+    return balanceInfoCache.get(client.toString()).getBalances();
+  }
+
+  //todo для чего тут static?
+  public static AccountBalance getAssetBalance(String currency, BinanceSignedClient client) throws Exception {
+    List<AccountBalance> balances = getBalances(client);
+    Optional<AccountBalance> balance = balances.stream().filter(asset -> currency.equals(asset.getAsset())).findFirst();
+    return balance.orElse(null);
   }
 
   public PositionMode getPositionMode() throws Exception {
@@ -111,6 +130,23 @@ public class BinanceSignedClient extends AbstractSignedClient {
   public Order queryOrder(String symbol, Long orderId, String clientOrderId) throws Exception {
     synchronized(lock) {
       return client.queryOrder(symbol, orderId, clientOrderId);
+    }
+  }
+
+  private static class BalanceInfo {
+    private final List<AccountBalance> balances;
+    private final long timestamp;
+    public BalanceInfo(List<AccountBalance> balances) {
+      this.balances = balances;
+      this.timestamp = DateUtils.currentTimeMillis();
+    }
+
+    public List<AccountBalance> getBalances() {
+      return balances;
+    }
+
+    public long getTimestamp() {
+      return timestamp;
     }
   }
 }

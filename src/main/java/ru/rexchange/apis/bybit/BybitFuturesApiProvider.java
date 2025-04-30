@@ -29,6 +29,22 @@ public class BybitFuturesApiProvider {
     return Float.parseFloat((String) list.get(0).get("lastPrice"));
   }
 
+  /**
+   * Метод для получения параметров торговли вроде tickSize, минимальный и максимальный размер ордера и т. д.
+   * @param symbol - символ торговой пары
+   * @return словарь с ключами: symbol, priceScale, priceFilter (словарь; внутри minPrice, maxPrice, tickSize),
+   * lotSizeFilter (словарь; внутри minNotionalValue, maxOrderQty, maxMktOrderQty, minOrderQty, qtyStep),
+   * leverageFilter(словарь; внутри minLeverage, maxLeverage, leverageStep), copyTrading
+
+   * Пример:
+   * {symbol=KASUSDT, contractType=LinearPerpetual, status=Trading, baseCoin=KAS, quoteCoin=USDT,
+   * launchTime=1691138081000, deliveryTime=0, deliveryFeeRate=, priceScale=5,
+   * leverageFilter={minLeverage=1, maxLeverage=50.00, leverageStep=0.01},
+   * priceFilter={minPrice=0.00001, maxPrice=199.99998, tickSize=0.00001},
+   * lotSizeFilter={maxOrderQty=4616000, minOrderQty=10, qtyStep=10, maxMktOrderQty=774000, minNotionalValue=5},
+   * unifiedMarginTrade=true, fundingInterval=240, settleCoin=USDT, copyTrading=both,
+   * upperFundingRate=0.01, lowerFundingRate=-0.01, riskParameters={priceLimitRatioX=0.15, priceLimitRatioY=0.3}}
+   */
   public static Map<String, Object> getInstrumentInfo(String symbol) {
     MarketDataRequest request = MarketDataRequest.builder().category(CategoryType.LINEAR).symbol(symbol).build();
     Map<String, Object> response = checkResponse(getPublicMarketClient().getInstrumentsInfo(request));
