@@ -35,7 +35,6 @@ public class BybitSignedClientTest {
         apiClient.placeOrder(symbol, Side.BUY, PositionIdx.HEDGE_MODE_BUY,
             TradeOrderType.LIMIT, "0.01", "1500", null, null);
     //System.out.println(apiClient.getOrders(false, symbol));
-    //todo check TP & SL
     String orderId = order.getString(FIELD_ORDER_ID);
     if (orderId != null) {
       if (!apiClient.cancelOrder(symbol, orderId))

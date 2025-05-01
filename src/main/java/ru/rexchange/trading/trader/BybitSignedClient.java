@@ -180,13 +180,36 @@ public class BybitSignedClient extends AbstractSignedClient {
     try {
       TradeOrderRequest.TradeOrderRequestBuilder builder = TradeOrderRequest.builder().category(CategoryType.LINEAR)
           .symbol(symbol).side(side).orderType(orderType).positionIdx(mode)
-          .qty(quantity).price(price).timeInForce(TimeInForce.GOOD_TILL_CANCEL) .isLeverage(1);
+          .price(price).timeInForce(TimeInForce.GOOD_TILL_CANCEL).isLeverage(1);
       if (reduceOnly != null)
         builder.reduceOnly(reduceOnly);
       if (triggerDirection != null)
         builder.triggerDirection(triggerDirection).triggerPrice(price).triggerBy(TriggerBy.MARK_PRICE);
+      if (quantity != null)
+        builder.qty(quantity);
+      else if (reduceOnly != null && reduceOnly)
+        builder.qty("0");
       TradeOrderRequest orderRequest = builder.build();
       var response = client.createOrder(orderRequest);
+      Map<String, Object> result = BybitFuturesApiProvider.checkResponse(response);
+      //LOGGER.info("Order placed: {}", response);
+      if (!result.containsKey(FIELD_ORDER_ID))
+        throw new SystemException("Response doesn't contain orderId");
+      return queryOrder(symbol, (String) result.get(FIELD_ORDER_ID));
+    } catch (Exception e) {
+      LOGGER.error("Error placing order: {}", e.getMessage());
+      throw new RuntimeException("Failed to place order", e);
+    }
+  }
+
+  //todo to think and implement (it won't return an orderId)
+  public BybitOrder placeStopOrder(String symbol, PositionIdx mode,
+                               String quantity, String price) {
+    try {
+      PositionDataRequest.PositionDataRequestBuilder builder = PositionDataRequest.builder().category(CategoryType.LINEAR)
+          .symbol(symbol).positionIdx(mode);
+      PositionDataRequest orderRequest = builder.build();
+      var response = pClient.setTradingStop(orderRequest);
       Map<String, Object> result = BybitFuturesApiProvider.checkResponse(response);
       //LOGGER.info("Order placed: {}", response);
       if (!result.containsKey(FIELD_ORDER_ID))
@@ -225,11 +248,9 @@ public class BybitSignedClient extends AbstractSignedClient {
 
   public boolean cancelOrder(String symbol, String orderId) {
     try {
-      var cancelRequest = TradeOrderRequest.builder()
-          .category(CategoryType.LINEAR)
-          .symbol(symbol)
-          .orderId(orderId)
-          .build();
+      TradeOrderRequest.TradeOrderRequestBuilder builder = TradeOrderRequest.builder()
+          .category(CategoryType.LINEAR).orderId(orderId).symbol(symbol);
+      TradeOrderRequest cancelRequest = builder.build();
 
       Object response = client.cancelOrder(cancelRequest);
       Map<String, Object> result = BybitFuturesApiProvider.checkResponse(response);

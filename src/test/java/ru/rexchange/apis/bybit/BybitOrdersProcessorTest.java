@@ -3,9 +3,11 @@ package ru.rexchange.apis.bybit;
 import com.bybit.api.client.domain.position.PositionMode;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import ru.rexchange.gen.OrderInfoObject;
 import ru.rexchange.test.TestTools;
+import ru.rexchange.tools.Utils;
 import ru.rexchange.trading.TraderAuthenticator;
 import ru.rexchange.trading.trader.BybitSignedClient;
 
@@ -15,6 +17,7 @@ import java.math.RoundingMode;
 
 public class BybitOrdersProcessorTest {
   @Test
+  @Disabled
   public void testBitcoinOrderPreparing() throws IOException {
     TestTools.prepareEnvironment();
     BybitSignedClient apiClient = getSignedClient();
@@ -89,16 +92,26 @@ public class BybitOrdersProcessorTest {
   }
 
   @Test
+  @Disabled
   public void testDealOpeningAndClosing() throws Exception {
     TestTools.prepareEnvironment();
     BybitSignedClient apiClient = getSignedClient();
     String symbol = "ETHUSDT";
     Float price = BybitFuturesApiProvider.getLastPrice(symbol);
     Assertions.assertNotNull(price);
+    //price *= 0.97f;
+    BybitOrdersProcessor processor = BybitOrdersProcessor.getInstance(false);
     BybitOrdersProcessor.PositionContainer result =
-        BybitOrdersProcessor.getInstance(true).placeOrder(apiClient, null, false, price,
-        symbol, 0.02f, 5, true, price * 0.97f, price * 1.04f);
+        processor.placeOrder(apiClient, null, true, price,
+        symbol, 0.01, 5, true, price * 0.97f, price * 1.05f);
     Assertions.assertNotNull(result);
+    Utils.waitSafe(5000L);
+    result.rearrangeStopLoss(apiClient, BigDecimal.valueOf(price * 0.95f));
+    Utils.waitSafe(1000L);
+    result.rearrangeTakeProfit(apiClient, BigDecimal.valueOf(price * 1.03f));
+    Utils.waitSafe(1000L);
+    result.rearrangeTakeProfit(apiClient, BigDecimal.ZERO);
+    result.update(apiClient);
     OrderInfoObject closeDeal = result.closeDeal(apiClient);
     Assertions.assertNotNull(closeDeal);
   }

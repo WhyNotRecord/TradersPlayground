@@ -548,7 +548,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
     }
   }
 
-  public boolean cancelOrder(KucoinSignedClient apiClient, String orderId) {
+  public boolean cancelOrder(KucoinSignedClient apiClient, String orderId, String symbol) {
     if (orderId == null) {
       LOGGER.warn("No orderId provided");
       return false;
@@ -798,11 +798,11 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
         }
 
         if (takeProfitOrder != null) {
-          if (!getOrdersProcessor().cancelOrder(apiAccess, takeProfitOrder.getOrderId()))
+          if (!getOrdersProcessor().cancelOrder(apiAccess, takeProfitOrder.getOrderId(), takeProfitOrder.getSymbol()))
             LOGGER.warn("Unsuccessful take-profit order cancelling");
         }
         if (stopLossOrder != null) {
-          if (!getOrdersProcessor().cancelOrder(apiAccess, stopLossOrder.getOrderId()))
+          if (!getOrdersProcessor().cancelOrder(apiAccess, stopLossOrder.getOrderId(), stopLossOrder.getSymbol()))
             LOGGER.warn("Unsuccessful stop-loss order cancelling");
         }
 
@@ -883,18 +883,20 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
       if (position != null)
         LOGGER.debug("Cancelling position container with id = {}", position.getPositionId());
 
-      if (getStopLossOrder() != null) {
-        if (getOrdersProcessor().cancelOrder(apiAccess, getStopLossOrder().getOrderId()))
+      OrderInfoObject slOrder = getStopLossOrder();
+      if (slOrder != null) {
+        if (getOrdersProcessor().cancelOrder(apiAccess, slOrder.getOrderId(), slOrder.getSymbol()))
           result++;
       }
-      if (getTakeProfitOrder() != null) {
-        if (getOrdersProcessor().cancelOrder(apiAccess, getTakeProfitOrder().getOrderId()))
+      OrderInfoObject tpOrder = getTakeProfitOrder();
+      if (tpOrder != null) {
+        if (getOrdersProcessor().cancelOrder(apiAccess, tpOrder.getOrderId(), tpOrder.getSymbol()))
           result++;
       }
 
       for (OrderInfoObject order : orders) {
         if (order != null) {
-          if (getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId()))
+          if (getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId(), order.getSymbol()))
             result++;
         }
       }
@@ -909,7 +911,7 @@ public class KucoinOrdersProcessor extends AbstractOrdersProcessor<OrderResponse
       boolean result = true;
       for (OrderInfoObject order : new ArrayList<>(orders)) {
         if (!OrderInfoObject.OrderStatus.FILLED.equals(order.getStatus())) {
-          boolean safetyCancelled = getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId());
+          boolean safetyCancelled = getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId(), order.getSymbol());
           if (!safetyCancelled) {
             result = false;
           } else {

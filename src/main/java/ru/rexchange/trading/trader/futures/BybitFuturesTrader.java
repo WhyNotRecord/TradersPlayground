@@ -6,10 +6,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.rexchange.apis.bybit.BybitOrdersProcessor;
 import ru.rexchange.data.Consts;
+import ru.rexchange.gen.OrderInfoObject;
 import ru.rexchange.gen.PositionInfo;
 import ru.rexchange.gen.TraderConfig;
 import ru.rexchange.trading.AbstractOrdersProcessor;
 import ru.rexchange.trading.TraderAuthenticator;
+import ru.rexchange.trading.trader.AbstractPositionContainer;
 import ru.rexchange.trading.trader.BybitSignedClient;
 
 import java.util.List;
@@ -238,6 +240,26 @@ public class BybitFuturesTrader extends CommonFuturesTrader<BybitSignedClient> {
   protected void loadExistingPositions() {
     loadLastOpenOrders(5);
     //getSignedClient().getAccountData();
+  }
+
+  @Override
+  protected void finishPosition(AbstractPositionContainer<BybitSignedClient> position, Long closeTime, String initiator) {
+    super.finishPosition(position, closeTime, initiator);
+    if (STOP_LOSS_PARAM.equals(initiator)) {
+      OrderInfoObject tpOrder = position.getTakeProfitOrder();
+      if (tpOrder != null) {
+        if (!getOrdersProcessor().cancelOrder(getSignedClient(), tpOrder.getOrderId(), tpOrder.getSymbol())) {
+          getLogger().warn("Unsuccessful TP cancellation for position {}", position.getPositionInfo().getPositionId());
+        }
+      }
+    } else if (TAKE_PROFIT_PARAM.equals(initiator)) {
+      OrderInfoObject slOrder = position.getStopLossOrder();
+      if (slOrder != null) {
+        if (!getOrdersProcessor().cancelOrder(getSignedClient(), slOrder.getOrderId(), slOrder.getSymbol())) {
+          getLogger().warn("Unsuccessful SL cancellation for position {}", position.getPositionInfo().getPositionId());
+        }
+      }
+    }
   }
 
   @Override

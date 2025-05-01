@@ -4,6 +4,7 @@ import com.bybit.api.client.domain.TradeOrderType;
 import com.bybit.api.client.domain.trade.PositionIdx;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.Map;
 
 public class BybitOrder {
@@ -53,6 +54,68 @@ public class BybitOrder {
   }
 
   /**
+   * Возвращает значение типа Double по заданному ключу.
+   * Если значение невозможно привести к Double, возвращает null.
+   *
+   * @param key ключ для извлечения значения
+   * @return число типа Double или null, если значение отсутствует или некорректно
+   */
+  public Double getDouble(String key) {
+    Object value = orderData.get(key);
+    if (value == null) {
+      return null;
+    }
+    try {
+      if (value instanceof Number) {
+        return ((Number) value).doubleValue();
+      } else {
+        return Double.parseDouble(value.toString());
+      }
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  /**
+   * Возвращает значение типа Integer по заданному ключу.
+   * Если значение невозможно привести к Integer, возвращает null.
+   *
+   * @param key ключ для извлечения значения
+   * @return число типа Integer или null, если значение отсутствует или некорректно
+   */
+  public Integer getInteger(String key) {
+    Object value = orderData.get(key);
+    if (value == null) {
+      return null;
+    }
+    try {
+      if (value instanceof Number) {
+        return ((Number) value).intValue();
+      } else {
+        return Integer.parseInt(value.toString());
+      }
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  public BigDecimal getBigDecimal(String key) {
+    Object value = orderData.get(key);
+    if (value instanceof BigDecimal) {
+      return (BigDecimal) value;
+    } else if (value instanceof Number) {
+      return BigDecimal.valueOf(((Number) value).doubleValue());
+    } else if (value instanceof String) {
+      try {
+        return new BigDecimal((String) value);
+      } catch (NumberFormatException e) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Возвращает булево значение по заданному ключу.
    * Если значение невозможно привести к Boolean, возвращает null.
    *
@@ -85,41 +148,65 @@ public class BybitOrder {
     //return TradeOrderType.valueOf(getString("orderType"));
   }
 
-  public PositionIdx getPositionIdx() {
-    return PositionIdx.valueOf(getString("positionIdx"));
+  public Integer getPositionIdx() {
+    //return PositionIdx.valueOf(getString("positionIdx"));
+    return getInteger("positionIdx");
+    /*Integer value = getInteger("positionIdx"); // Получаем значение как Integer
+    if (value != null) {
+      return Arrays.stream(PositionIdx.values())
+          .filter(idx -> idx.getIndex() == value)
+          .findFirst()
+          .orElse(null);
+    } else {
+      return null;
+    }*/
   }
 
-  //TODO implement all the getters
   public String getSymbol() {
-    return null;
+    return getString("symbol");
   }
 
   public BigDecimal getAvgPrice() {
-    return null;
+    return getBigDecimal("avgPrice");//String
+  }
+
+  public Double getOrigQty() {
+    return getDouble("qty");
   }
 
   public BigDecimal getExecutedQty() {
-    return null;
+    return getBigDecimal("cumExecQty");//String
   }
 
-  public Number getPrice() {
-    return null;
+  public Float getPrice() {
+    return getFloat("price"); // price из FIELDS
   }
 
-  public Number getStopPrice() {
-    return null;
+  public Float getStopPrice() {
+    return getFloat("triggerPrice"); // price из FIELDS
   }
 
   public String getStatus() {
-    return null;
-  }
-
-  public Number getOrigQty() {
-    return null;
+    return getString("orderStatus"); // orderStatus из FIELDS
   }
 
   public long getUpdateTime() {
+    Object value = orderData.get("updatedTime"); // updatedTime из FIELDS
+    if (value instanceof Number) {
+      return ((Number) value).longValue();
+    } else if (value instanceof String) {
+      try {
+        return Long.parseLong((String) value);
+      } catch (NumberFormatException e) {
+        return 0; // or handle the error as needed
+      }
+    }
+
     return 0;
+  }
+
+  public Integer getTriggerType() {
+    return getInteger("triggerDirection");
   }
 
   /**
@@ -138,6 +225,7 @@ public class BybitOrder {
       "createdTime",
       "positionIdx",
       "stopOrderType",
+      "triggerPrice",
       "timeInForce",
       "updatedTime",
       "cancelType",

@@ -7,7 +7,6 @@ import com.bybit.api.client.domain.trade.Side;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ru.rexchange.apis.binance.BinanceOrdersProcessor;
 import ru.rexchange.data.Consts;
 import ru.rexchange.exception.SystemException;
 import ru.rexchange.exception.UserException;
@@ -30,6 +29,7 @@ import java.net.UnknownHostException;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, BybitSignedClient> {
@@ -98,27 +98,31 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
   public static OrderInfoObject fillOrderObject(OrderInfoObject orderObj, BybitOrder order, String parentId) {
     orderObj.setOrderId(order.getOrderId());
     orderObj.setExternalId(order.getOrderId());
-    orderObj.setDirection(order.getSide());
+    orderObj.setDirection(order.getSide().toUpperCase());
 
     orderObj.setType(defineType(order));
     if (orderObj.getType() == null)
       orderObj.setType(order.getType());
+    orderObj.setStatus(order.getStatus().toUpperCase());
     //orderObj.setPositionSide(definePositionSide(order.getPositionIdx()));
     //orderObj.setBaseIndex(baseCurrency);
     //orderObj.setQuotedIndex(quotedCurrency);
     orderObj.setSymbol(order.getSymbol());
-    orderObj.setAvgPrice(order.getAvgPrice());
-    orderObj.setExecutedAmount(order.getExecutedQty());
-    orderObj.setPrice(order.getAvgPrice().floatValue());
-    if (orderObj.getPrice() == 0)
-      orderObj.setPrice(order.getPrice().floatValue());
-    if (orderObj.getPrice() == 0)
-      orderObj.setPrice(order.getStopPrice().floatValue());
-    orderObj.setStatus(order.getStatus());
-    if (BigDecimal.ZERO.compareTo(order.getExecutedQty()) == 0)
-      orderObj.setAmount(order.getOrigQty().doubleValue());
+    BigDecimal avgPrice = order.getAvgPrice();
+    if (avgPrice != null) {
+      orderObj.setAvgPrice(avgPrice);
+      orderObj.setPrice(avgPrice.floatValue());
+    } else {
+      orderObj.setPrice(order.getPrice());
+    }
+    if (orderObj.getPrice() == null)
+      orderObj.setPrice(order.getStopPrice());
+    BigDecimal executedQty = order.getExecutedQty();
+    orderObj.setExecutedAmount(executedQty);
+    if (executedQty == null || BigDecimal.ZERO.compareTo(executedQty) == 0)
+      orderObj.setAmount(order.getOrigQty());
     else
-      orderObj.setAmount(order.getExecutedQty().doubleValue());
+      orderObj.setAmount(executedQty.doubleValue());
     orderObj.setPositionId(parentId);
     orderObj.setOrderTimestamp(new Timestamp(order.getUpdateTime()));
     return orderObj;
@@ -155,7 +159,7 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
           openSell(aClient, limit, pair, convertedAmount, priceStr);
       LOGGER.debug("Placed a {} order with id {} for {} {} by {}",
           order.getSide(), order.getOrderId(), convertedAmount, pair, priceStr);
-      if (!OrderStatus.FILLED.name().equals(order.getStatus())) {
+      if (!OrderStatus.FILLED.name().equalsIgnoreCase(order.getStatus())) {
         LOGGER.info("Order is {}, not {}!", order.getStatus(), OrderStatus.FILLED.name());
       }
       PositionContainer result;
@@ -170,16 +174,16 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
       List<BybitOrder> orders = getOpenOrders(aClient, pair);
       if (stopLoss != null && !Float.isNaN(stopLoss)) {
         stopLossOrder = placeStopLoss(aClient, orders, symbolInfo, result, stopLoss);
-        if (stopLossOrder == null && cancelOrder(aClient, order.getOrderId())) {
+        if (stopLossOrder == null && cancelOrder(aClient, order.getOrderId(), order.getSymbol())) {
           return null;
         }
         result.setStopLossOrder(convertOrder(stopLossOrder, result.getPositionInfo().getPositionId()));
       }
       if (takeProfit != null && !Float.isNaN(takeProfit)) {
         takeProfitOrder = placeTakeProfit(aClient, orders, symbolInfo, result, takeProfit);
-        if (takeProfitOrder == null && cancelOrder(aClient, order.getOrderId())) {
+        if (takeProfitOrder == null && cancelOrder(aClient, order.getOrderId(), order.getSymbol())) {
           if (stopLossOrder != null)
-            cancelOrder(aClient, stopLossOrder.getOrderId());
+            cancelOrder(aClient, stopLossOrder.getOrderId(), stopLossOrder.getSymbol());
           return null;
         }
         result.setTakeProfitOrder(convertOrder(takeProfitOrder, result.getPositionInfo().getPositionId()));
@@ -212,7 +216,7 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
           openSell(aClient, false, pair, convertedAmount, null);
       LOGGER.debug("Placed a {} order with id {} for {} {} by {}",
           order.getSide(), order.getOrderId(), convertedAmount, pair, lastPrice);
-      if (!OrderStatus.FILLED.name().equals(order.getStatus())) {
+      if (!OrderStatus.FILLED.name().equalsIgnoreCase(order.getStatus())) {
         LOGGER.info("Order is {}, not {}!", order.getStatus(), OrderStatus.FILLED.name());
       }
       if (openPosition == null)
@@ -246,12 +250,6 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
 
       if (minQty != null) {
         double minQtyDouble = Double.parseDouble(minQty);
-        //Check LOT_SIZE to make sure amount is not too small
-        if (amount < minQtyDouble) {
-          throw new UserException("Amount (%s) smaller than min LOT_SIZE (%s) for %s, could not open trade!",
-              amount, minQty, symbolInfo.getSymbol());
-        }
-
         //Convert amount to an integer multiple of LOT_SIZE and convert to asset precision
         LOGGER.trace("Converting from double trade amount {} LOT_SIZE - {}", originalDecimal, minQty);
         //TODO проверить эти формулы и упростить, если возможно
@@ -260,6 +258,12 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
             //может вставить E stripTrailingZeros().
             toString();
         LOGGER.trace("Converted to {}", convertedAmount);
+
+        //Check LOT_SIZE to make sure amount is not too small
+        if (new BigDecimal(convertedAmount).compareTo(BigDecimal.valueOf(minQtyDouble)) < 0) {
+          throw new UserException("Amount (%s) smaller than min LOT_SIZE (%s) for %s, could not open trade!",
+              convertedAmount, minQty, symbolInfo.getSymbol());
+        }
 
         if (minNotational != null) {
           double notational = Double.parseDouble(convertedAmount) * price;
@@ -343,7 +347,10 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
     try {
       return setLeverage(apiClient, pair, leverage);
     } catch (Exception e) {
-      LOGGER.error("Unsuccessful leverage change for pair {}", pair, e);
+      if (e.getMessage() != null && e.getMessage().contains("leverage not modified"))
+        LOGGER.info("Leverage {} for {} was not modified (left x{})", leverage, pair, leverage);
+      else
+        LOGGER.error("Unsuccessful leverage change for pair {}", pair, e);
       return false;
     }
   }
@@ -407,11 +414,11 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
   private Float checkForExistingTakeProfit(BybitSignedClient apiClient, List<BybitOrder> openOrders,
                                            boolean buy, String symbol) {
     BybitOrder existingTakeProfit = findExistingOrder(openOrders,
-        symbol, getClosingOrderSide(buy), getClosingPositionSide(buy), TradeOrderType.MARKET);
+        symbol, getClosingOrderSide(buy), getClosingPositionSide(buy), TradeOrderType.MARKET, buy ? 1 : 2);
     if (existingTakeProfit != null) {
-      float stopPrice = existingTakeProfit.getStopPrice().floatValue();
+      float stopPrice = existingTakeProfit.getStopPrice();
       LOGGER.debug("Existing TP at {} found", stopPrice);
-      if (!cancelOrder(apiClient, existingTakeProfit.getOrderId()))
+      if (!cancelOrder(apiClient, existingTakeProfit.getOrderId(), existingTakeProfit.getSymbol()))
         throw new SystemException("Unsuccessful TP order cancellation " + existingTakeProfit.getOrderId());
       return stopPrice;
     }
@@ -446,11 +453,11 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
   private Float checkForExistingStopLoss(BybitSignedClient apiClient, List<BybitOrder> openOrders,
                                          boolean buy, String symbol) {
     BybitOrder existingStopLoss = findExistingOrder(openOrders,
-        symbol, getClosingOrderSide(buy), getClosingPositionSide(buy), TradeOrderType.MARKET);
+        symbol, getClosingOrderSide(buy), getClosingPositionSide(buy), TradeOrderType.MARKET, buy ? 2 : 1);
     if (existingStopLoss != null) {//логика корректировки стоп-лосса
-      float stopPrice = existingStopLoss.getStopPrice().floatValue();
+      float stopPrice = existingStopLoss.getStopPrice();
       LOGGER.debug("Existing SL at {} found", stopPrice);
-      if (!cancelOrder(apiClient, existingStopLoss.getOrderId()))
+      if (!cancelOrder(apiClient, existingStopLoss.getOrderId(), existingStopLoss.getSymbol()))
         throw new SystemException("Unsuccessful SL order cancellation " + existingStopLoss.getOrderId());
       return stopPrice;
     }
@@ -467,12 +474,12 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
   }
 
   @Override
-  public boolean cancelOrder(BybitSignedClient apiClient, String orderId) {
+  public boolean cancelOrder(BybitSignedClient apiClient, String orderId, String symbol) {
     if (orderId == null) {
       LOGGER.warn("No orderId provided");
       return false;
     }
-    LOGGER.debug("Cancelling order {}", orderId);
+    LOGGER.debug("Cancelling order {} on {}", orderId, symbol);
     if (testOrders) {
       /*LOGGER.debug("Test order on {} cancelled: amount - {} price - {}",
           order.getSymbol(), order.getAmount(), order.getPrice());
@@ -481,7 +488,7 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
       return true;
     }
     try {
-      return Utils.executeInFewAttempts(() -> apiClient.cancelOrder(null, orderId),
+      return Utils.executeInFewAttempts(() -> apiClient.cancelOrder(symbol, orderId),
           3, getDefaultAttemptPause());
     } catch (Exception e) {
       LOGGER.error("Failed to cancelorder {}", orderId, e);
@@ -490,12 +497,14 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
   }
   
   private static BybitOrder findExistingOrder(List<BybitOrder> orders, String symbol,
-                                         Side orderSide, PositionIdx positionSide, TradeOrderType orderType) {
+                                         Side orderSide, PositionIdx positionSide, TradeOrderType orderType,
+                                              Integer triggerType) {
     if (orders == null)
       return null;
     for (BybitOrder order : orders) {
-      if (symbol.equals(order.getSymbol()) && orderSide.name().equals(order.getSide()) &&
-          positionSide.equals(order.getPositionIdx()) && orderType.name().equals(order.getType()))
+      if (symbol.equals(order.getSymbol()) && orderSide.name().equalsIgnoreCase(order.getSide()) &&
+          positionSide.getIndex() == order.getPositionIdx() && orderType.name().equalsIgnoreCase(order.getType()) &&
+          Objects.equals(order.getTriggerType(), triggerType))
         return order;
     }
     return null;
@@ -619,9 +628,13 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
             getPositionInfo().getDirection(), getExecutedAmount(), getPositionInfo().getSymbol(), e);
         return null;
       }
-      //TP и SL ордера отменяются автоматом
-      //getOrdersProcessor().cancelOrder((SignedClient) apiAccess, takeProfitOrder);
-      //getOrdersProcessor().cancelOrder((SignedClient) apiAccess, stopLossOrder);
+      //TP и SL ордера не отменяются автоматом (пока что)
+      OrderInfoObject tpOrder = getTakeProfitOrder();
+      if (tpOrder != null)
+        getOrdersProcessor().cancelOrder(apiAccess, tpOrder.getOrderId(), tpOrder.getSymbol());
+      OrderInfoObject slOrder = getStopLossOrder();
+      if (slOrder != null)
+        getOrdersProcessor().cancelOrder(apiAccess, slOrder.getOrderId(), slOrder.getSymbol());
       return getOrdersProcessor().convertOrder(result, getPositionInfo().getPositionId());
     }
 
@@ -653,18 +666,20 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
       if (position != null)
         LOGGER.debug("Cancelling position container with id = {}", position.getPositionId());
 
-      if (getStopLossOrder() != null) {
-        if (getOrdersProcessor().cancelOrder(apiAccess, getStopLossOrder().getOrderId()))
+      OrderInfoObject slOrder = getStopLossOrder();
+      if (slOrder != null) {
+        if (getOrdersProcessor().cancelOrder(apiAccess, slOrder.getOrderId(), slOrder.getSymbol()))
           result++;
       }
-      if (getTakeProfitOrder() != null) {
-        if (getOrdersProcessor().cancelOrder(apiAccess, getTakeProfitOrder().getOrderId()))
+      OrderInfoObject tpOrder = getTakeProfitOrder();
+      if (tpOrder != null) {
+        if (getOrdersProcessor().cancelOrder(apiAccess, tpOrder.getOrderId(), tpOrder.getSymbol()))
           result++;
       }
 
       for (OrderInfoObject order : orders) {
         if (order != null) {
-          if (getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId()))
+          if (getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId(), order.getSymbol()))
             result++;
         }
       }
@@ -679,7 +694,7 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
       boolean result = true;
       for (OrderInfoObject order : new ArrayList<>(orders)) {
         if (!OrderInfoObject.OrderStatus.FILLED.equals(order.getStatus())) {
-          boolean safetyCancelled = getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId());
+          boolean safetyCancelled = getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId(), order.getSymbol());
           if (!safetyCancelled) {
             result = false;
           } else {
@@ -706,11 +721,6 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
       }
       boolean removeOnly = newTp.floatValue() == 0;
       //существующий TP отменится в placeTakeProfit
-      /*if (getTakeProfitOrder() != null) {
-        Order tp = getOrdersProcessor().cancelOrder((SignedClient) apiAccess, getTakeProfitOrder());
-        if (tp == null)
-          return null;
-      }*/
       try {
         BybitOrder newTPOrder = getOrdersProcessor().placeTakeProfit(apiAccess,
             getOrdersProcessor().getOpenOrders(apiAccess, position.getSymbol()),
@@ -748,11 +758,6 @@ public class BybitOrdersProcessor extends AbstractOrdersProcessor<BybitOrder, By
         return null;
       }
       //существующий SL отменится в placeStopLoss
-      /*if (getStopLossOrder() != null) {
-        Order sl = getOrdersProcessor().cancelOrder((SignedClient) apiAccess, getStopLossOrder());
-        if (sl == null)
-          return null;
-      }*/
       try {
         BybitOrder newSlOrder = getOrdersProcessor().placeStopLoss(apiAccess,
             getOrdersProcessor().getOpenOrders(apiAccess, position.getSymbol()),

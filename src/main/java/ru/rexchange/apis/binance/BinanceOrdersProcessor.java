@@ -109,9 +109,11 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
     //orderObj.setBaseIndex(baseCurrency);
     //orderObj.setQuotedIndex(quotedCurrency);
     orderObj.setSymbol(order.getSymbol());
-    orderObj.setAvgPrice(order.getAvgPrice());
     orderObj.setExecutedAmount(order.getExecutedQty());
-    orderObj.setPrice(order.getAvgPrice().floatValue());
+    if (order.getAvgPrice() != null) {
+      orderObj.setAvgPrice(order.getAvgPrice());
+      orderObj.setPrice(order.getAvgPrice().floatValue());
+    }
     if (orderObj.getPrice() == 0)
       orderObj.setPrice(order.getPrice().floatValue());
     if (orderObj.getPrice() == 0)
@@ -168,16 +170,16 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
       List<Order> orders = getOpenOrders(aClient);
       if (stopLoss != null && !Float.isNaN(stopLoss)) {
         stopLossOrder = placeStopLoss(aClient, orders, symbolInfo, result, stopLoss);
-        if (stopLossOrder == null && cancelOrder(aClient, order.getClientOrderId())) {
+        if (stopLossOrder == null && cancelOrder(aClient, order.getClientOrderId(), order.getSymbol())) {
           return null;
         }
         result.setStopLossOrder(convertOrder(stopLossOrder, result.getPositionInfo().getPositionId()));
       }
       if (takeProfit != null && !Float.isNaN(takeProfit)) {
         takeProfitOrder = placeTakeProfit(aClient, orders, symbolInfo, result, takeProfit);
-        if (takeProfitOrder == null && cancelOrder(aClient, order.getClientOrderId())) {
+        if (takeProfitOrder == null && cancelOrder(aClient, order.getClientOrderId(), order.getSymbol())) {
           if (stopLossOrder != null)
-            cancelOrder(aClient, stopLossOrder.getClientOrderId());
+            cancelOrder(aClient, stopLossOrder.getClientOrderId(), order.getSymbol());
           return null;
         }
         result.setTakeProfitOrder(convertOrder(takeProfitOrder, result.getPositionInfo().getPositionId()));
@@ -246,12 +248,6 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
 
       if (minQty != null) {
         double minQtyDouble = Double.parseDouble(minQty);
-        //Check LOT_SIZE to make sure amount is not too small
-        if (amount < minQtyDouble) {
-          throw new UserException("Amount (%s) smaller than min LOT_SIZE (%s) for %s, could not open trade!",
-              amount, minQty, symbolInfo.getSymbol());
-        }
-
         //Convert amount to an integer multiple of LOT_SIZE and convert to asset precision
         LOGGER.trace("Converting from double trade amount {} LOT_SIZE - {}", originalDecimal, minQty);
         //TODO проверить эти формулы и упростить, если возможно
@@ -260,6 +256,12 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
             //может вставить E stripTrailingZeros().
             toString();
         LOGGER.trace("Converted to {}", convertedAmount);
+
+        //Check LOT_SIZE to make sure amount is not too small
+        if (new BigDecimal(convertedAmount).compareTo(BigDecimal.valueOf(minQtyDouble)) < 0) {
+          throw new UserException("Amount (%s) smaller than min LOT_SIZE (%s) for %s, could not open trade!",
+              convertedAmount, minQty, symbolInfo.getSymbol());
+        }
 
         if (minNotational != null) {
           double notational = Double.parseDouble(convertedAmount) * price;
@@ -451,7 +453,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
     if (existingTakeProfit != null) {
       float stopPrice = existingTakeProfit.getStopPrice().floatValue();
       LOGGER.debug("Existing TP at {} found", stopPrice);
-      if (!cancelOrder(apiClient, existingTakeProfit.getClientOrderId()))
+      if (!cancelOrder(apiClient, existingTakeProfit.getClientOrderId(), existingTakeProfit.getSymbol()))
         throw new SystemException("Unsuccessful TP order cancellation " + existingTakeProfit.getClientOrderId());
       return stopPrice;
     }
@@ -500,7 +502,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
     if (existingStopLoss != null) {//логика корректировки стоп-лосса
       float stopPrice = existingStopLoss.getStopPrice().floatValue();
       LOGGER.debug("Existing SL at {} found", stopPrice);
-      if (!cancelOrder(apiClient, existingStopLoss.getClientOrderId()))
+      if (!cancelOrder(apiClient, existingStopLoss.getClientOrderId(), existingStopLoss.getSymbol()))
         throw new SystemException("Unsuccessful SL order cancellation " + existingStopLoss.getClientOrderId());
       return stopPrice;
     }
@@ -576,7 +578,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
     }
   }*/
 
-  public boolean cancelOrder(BinanceSignedClient apiClient, String orderId) {
+  public boolean cancelOrder(BinanceSignedClient apiClient, String orderId, String symbol) {
     if (orderId == null) {
       LOGGER.warn("No orderId provided");
       return false;
@@ -817,18 +819,20 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
       if (position != null)
         LOGGER.debug("Cancelling position container with id = {}", position.getPositionId());
 
-      if (getStopLossOrder() != null) {
-        if (getOrdersProcessor().cancelOrder(apiAccess, getStopLossOrder().getOrderId()))
+      OrderInfoObject slOrder = getStopLossOrder();
+      if (slOrder != null) {
+        if (getOrdersProcessor().cancelOrder(apiAccess, slOrder.getOrderId(), slOrder.getSymbol()))
           result++;
       }
-      if (getTakeProfitOrder() != null) {
-        if (getOrdersProcessor().cancelOrder(apiAccess, getTakeProfitOrder().getOrderId()))
+      OrderInfoObject tpOrder = getTakeProfitOrder();
+      if (tpOrder != null) {
+        if (getOrdersProcessor().cancelOrder(apiAccess, tpOrder.getOrderId(), tpOrder.getSymbol()))
           result++;
       }
 
       for (OrderInfoObject order : orders) {
         if (order != null) {
-          if (getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId()))
+          if (getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId(), order.getSymbol()))
             result++;
         }
       }
@@ -843,7 +847,7 @@ public class BinanceOrdersProcessor extends AbstractOrdersProcessor<Order, Binan
       boolean result = true;
       for (OrderInfoObject order : new ArrayList<>(orders)) {
         if (!OrderInfoObject.OrderStatus.FILLED.equals(order.getStatus())) {
-          boolean safetyCancelled = getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId());
+          boolean safetyCancelled = getOrdersProcessor().cancelOrder(apiAccess, order.getOrderId(), order.getSymbol());
           if (!safetyCancelled) {
             result = false;
           } else {

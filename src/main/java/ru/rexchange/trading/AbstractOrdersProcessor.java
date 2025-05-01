@@ -83,7 +83,7 @@ public abstract class AbstractOrdersProcessor<O, C extends AbstractSignedClient>
   /*@Deprecated
   public abstract boolean cancelOrder(C apiClient, OrderInfoObject order);*/
 
-  public abstract boolean cancelOrder(C apiClient, String orderId);
+  public abstract boolean cancelOrder(C apiClient, String orderId, String symbol);
 
   public abstract float getLastPrice(String symbol) throws Exception;
 
